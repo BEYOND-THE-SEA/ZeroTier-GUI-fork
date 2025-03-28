@@ -56,7 +56,8 @@ class MainWindow:
     def __init__(self):
         self.load_network_history()
 
-        self.window = tk.Tk(className="zerotier-gui")
+        self.window = self.create_window()  # Assurez-vous de créer la fenêtre principale
+
         self.window.title("ZeroTier-GUI")
         self.window.resizable(width=False, height=False)
 
@@ -97,11 +98,17 @@ class MainWindow:
             self.middleFrame, bd=2, bg=BACKGROUND
         )
 
-        self.networkList = TreeView(
-            self.middleFrame, "Network ID", "Name", "Status"
+        self.networkList = ttk.Treeview(
+            self.middleFrame, columns=("Network ID", "Name", "Status")
         )
-        self.networkList.column("Network ID", width=40)
-        self.networkList.column("Status", width=40)
+        self.networkList["show"] = "headings"
+        self.networkList.column("Network ID", width=100)
+        self.networkList.column("Name", width=150)
+        self.networkList.column("Status", width=100)
+        # Ajout des en-têtes pour les colonnes
+        self.networkList.heading("Network ID", text="Network ID")
+        self.networkList.heading("Name", text="Name")
+        self.networkList.heading("Status", text="Status")
 
         self.networkList.bind("<Double-Button-1>", self.call_see_network_info)
 
@@ -218,7 +225,9 @@ class MainWindow:
             pathTrustedId,
         ) in paths:
             pathsList.insert(
-                (
+                "",
+                "end",
+                values=(
                     str(pathActive),
                     str(pathAddress),
                     str(pathExpired),
@@ -250,7 +259,7 @@ class MainWindow:
         for peerAddress, peerVersion, peerRole, peerLatency in peers:
             if peerVersion == "-1.-1.-1":
                 peerVersion = "-"
-            peersList.insert((peerAddress, peerVersion, peerRole, peerLatency))
+            peersList.insert("", "end", values=(peerAddress, peerVersion, peerRole, peerLatency))
 
     def refresh_networks(self):
         self.networkList.delete(*self.networkList.get_children())
@@ -278,7 +287,7 @@ class MainWindow:
             if not networkName:
                 networkName = "Unknown Name"
             self.networkList.insert(
-                (networkId, networkName, networkStatus), isDown
+                "", "end", values=(networkId, networkName, networkStatus)
             )
 
         self.update_network_history_names()
@@ -305,10 +314,38 @@ class MainWindow:
                 return network["name"]
 
     def get_networks_info(self):
-        return json.loads(check_output(["zerotier-cli.exe", "-j", "listnetworks"]))
+        # La commande à exécuter
+        command = "zerotier-cli -j listnetworks"
+        try:
+            # On utilise cmd /c afin de lancer le .bat présent dans le PATH
+            output = check_output(["cmd", "/c", command], stderr=STDOUT)
+            # print(output.decode())
+            return json.loads(output.decode())
+        except CalledProcessError as e:
+            messagebox.showerror("Erreur", f"Erreur lors de l'exécution de la commande:\n{e.output.decode()}")
+            return {}
 
     def get_peers_info(self):
-        return json.loads(check_output(["zerotier-cli.exe", "-j", "peers"]))
+        # La commande à exécuter
+        command = "zerotier-cli -j peers"
+        try:
+            # On utilise cmd /c afin de lancer le .bat présent dans le PATH
+            output = check_output(["cmd", "/c", command], stderr=STDOUT)
+            return json.loads(output.decode())
+        except CalledProcessError as e:
+            messagebox.showerror("Erreur", f"Erreur lors de l'exécution de la commande:\n{e.output.decode()}")
+            return {}
+
+    def get_status(self):
+        # La commande à exécuter
+        command = "zerotier-cli status"
+        try:
+            # On utilise cmd /c afin de lancer le .bat présent dans le PATH
+            output = check_output(["cmd", "/c", command], stderr=STDOUT)
+            return output.decode().split()
+        except CalledProcessError as e:
+            messagebox.showerror("Erreur", f"Erreur lors de l'exécution de la commande:\n{e.output.decode()}")
+            return []
 
     def launch_sub_window(self, title):
         subWindow = tk.Toplevel(self.window, class_="zerotier-gui")
@@ -389,7 +426,7 @@ class MainWindow:
                         icon="info", message=join_result, parent=join_window
                     )
                     return
-                check_output(["zerotier-cli.exe", "join", network_id])
+                check_output(["cmd", "/c", "zerotier-cli", "join", network_id])
                 join_result = "Successfully joined network"
                 self.add_network_to_history(network_id)
                 messagebox.showinfo(
@@ -409,7 +446,7 @@ class MainWindow:
                 network_name = self.network_history[network_id]["name"]
                 if network_name == "":
                     network_name = "Unknown Name"
-                network_history_list.insert((network_name, network_id))
+                network_history_list.insert("", "end", values=(network_name, network_id))
 
         def populate_info_sidebar():
             selected_item = network_history_list.focus()
@@ -487,7 +524,7 @@ class MainWindow:
         join_title = tk.Label(
             main_frame, text="Join Network", font="Monospace"
         )
-        network_history_list = TreeView(left_frame, "Network")
+        network_history_list = ttk.Treeview(left_frame, columns=("Network",))
         network_history_scrollbar = tk.Scrollbar(
             left_frame, bd=2, bg=BACKGROUND
         )
@@ -496,6 +533,7 @@ class MainWindow:
         )
         network_history_scrollbar.config(command=network_history_list.yview)
 
+        network_history_list.style = ttk.Style()
         network_history_list.style.configure(
             "NoBackground.Treeview", background=BACKGROUND
         )
@@ -579,7 +617,7 @@ class MainWindow:
         )
         if answer:
             try:
-                check_output(["zerotier-cli.exe", "leave", network])
+                check_output(["cmd", "/c", "zerotier-cli", "leave", network])
                 leaveResult = "Successfully left network"
             except CalledProcessError:
                 leaveResult = "Error"
@@ -587,11 +625,6 @@ class MainWindow:
             return
         messagebox.showinfo(icon="info", message=leaveResult)
         self.refresh_networks()
-
-    def get_status(self):
-        status = check_output(["zerotier-cli.exe", "status"]).decode()
-        status = status.split()
-        return status
 
     def about_window(self):
         statusWindow = self.launch_sub_window("About")
@@ -697,65 +730,60 @@ class MainWindow:
         )
 
     def see_peer_paths(self, peerList):
-        try:
-            idInList = int(peerList.focus())
-        except TypeError:
-            messagebox.showinfo(
-                icon="info", title="Error", message="No peer selected"
-            )
+        selected = peerList.focus()
+        if not selected:
+            return
+        info = peerList.item(selected)
+        if not info.get("values"):
+            return
+        peerId = info["values"][0]
+        # Find index of peer in the peers info list by matching address
+        peers_info = self.get_peers_info()
+        idx = None
+        for i, peer in enumerate(peers_info):
+            if peer.get("address") == peerId:
+                idx = i
+                break
+        if idx is None:
             return
 
-        info = peerList.item(idInList)
-        peerId = info["values"][0]
-
+        # Create a new window for displaying peer paths
         pathsWindow = self.launch_sub_window("Peer Path")
         pathsWindow.configure(bg=BACKGROUND)
 
-        # frames
+        # Create frames
         topFrame = tk.Frame(pathsWindow, padx=20, bg=BACKGROUND)
         middleFrame = tk.Frame(pathsWindow, padx=20, bg=BACKGROUND)
         bottomFrame = tk.Frame(pathsWindow, padx=20, pady=10, bg=BACKGROUND)
 
-        # widgets
-        peerIdLabel = tk.Label(
-            topFrame,
-            font=40,
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-            text=f'Seeing paths for peer with ID "{str(peerId)}"',
-        )
+        # Create widgets for paths display
+        peerIdLabel = tk.Label(topFrame, font=40, bg=BACKGROUND, fg=FOREGROUND,
+                                text=f'Seeing paths for peer with ID "{str(peerId)}"')
         pathsListScrollbar = tk.Scrollbar(middleFrame, bd=2, bg=BACKGROUND)
-        pathsList = TreeView(
-            middleFrame,
-            "Active",
-            "Address",
-            "Expired",
-            "Last Receive",
-            "Last Send",
-            "Preferred",
-            "Trusted Path ID",
-        )
+        pathsList = ttk.Treeview(middleFrame, columns=("Active", "Address", "Expired", "Last Receive", "Last Send", "Preferred", "Trusted Path ID"))
+        pathsList["show"] = "headings"
+        pathsList.column("Active", width=90)
+        pathsList.column("Address", width=150)
+        pathsList.column("Expired", width=90)
+        pathsList.column("Last Receive", width=120)
+        pathsList.column("Last Send", width=120)
+        pathsList.column("Preferred", width=90)
+        pathsList.column("Trusted Path ID", width=90)
+        pathsList.heading("Active", text="Active")
+        pathsList.heading("Expired", text="Expired")
+        pathsList.heading("Address", text="Address")
+        pathsList.heading("Last Receive", text="Last Receive")
+        pathsList.heading("Last Send", text="Last Send")
+        pathsList.heading("Preferred", text="Preferred")
+        pathsList.heading("Trusted Path ID", text="Trusted Path ID")
 
-        closeButton = self.formatted_buttons(
-            bottomFrame,
-            text="Close",
-            bg=BUTTON_BACKGROUND,
-            activebackground=BUTTON_ACTIVE_BACKGROUND,
-            command=lambda: pathsWindow.destroy(),
-        )
-        refreshButton = self.formatted_buttons(
-            bottomFrame,
-            text="Refresh Paths",
-            bg=BUTTON_BACKGROUND,
-            activebackground=BUTTON_ACTIVE_BACKGROUND,
-            command=lambda: self.refresh_paths(pathsList, idInList),
-        )
-
-        # pack widgets
-        peerIdLabel.pack(side="left", fill="both")
+        # Pack widgets
+        peerIdLabel.pack(side="top", fill="x")
         pathsListScrollbar.pack(side="right", fill="both")
         pathsList.pack(side="bottom", fill="x")
 
+        closeButton = self.formatted_buttons(bottomFrame, text="Close", command=lambda: pathsWindow.destroy())
+        refreshButton = self.formatted_buttons(bottomFrame, text="Refresh Paths", command=lambda: self.refresh_paths(pathsList, idx))
         closeButton.pack(side="left", fill="x")
         refreshButton.pack(side="right", fill="x")
 
@@ -763,7 +791,7 @@ class MainWindow:
         middleFrame.pack(side="top", fill="x")
         bottomFrame.pack(side="top", fill="x")
 
-        self.refresh_paths(pathsList, idInList)
+        self.refresh_paths(pathsList, idx)
         pathsList.config(yscrollcommand=pathsListScrollbar.set)
         pathsListScrollbar.config(command=pathsList.yview)
 
@@ -783,9 +811,18 @@ class MainWindow:
 
         # widgets
         peersListScrollbar = tk.Scrollbar(middleFrame, bd=2, bg=BACKGROUND)
-        peersList = TreeView(
-            middleFrame, "ZT Address", "Version", "Role", "Latency"
+        peersList = ttk.Treeview(
+            middleFrame, columns=("ZT Address", "Version", "Role", "Latency")
         )
+        peersList["show"] = "headings"
+        peersList.column("ZT Address", width=120)
+        peersList.column("Version", width=80)
+        peersList.column("Role", width=80)
+        peersList.column("Latency", width=80)
+        peersList.heading("ZT Address", text="ZT Address")
+        peersList.heading("Version", text="Version")
+        peersList.heading("Role", text="Role")
+        peersList.heading("Latency", text="Latency")
         peersList.bind("<Double-Button-1>", call_see_peer_paths)
 
         closeButton = self.formatted_buttons(
@@ -829,17 +866,23 @@ class MainWindow:
         peersWindow.mainloop()
 
     def see_network_info(self):
-        try:
-            idInList = int(self.networkList.focus())
-        except TypeError:
-            messagebox.showinfo(
-                icon="info", title="Error", message="No network selected"
-            )
+        selected = self.networkList.focus()
+        if not selected:
             return
-        infoWindow = self.launch_sub_window("Network Info")
+        selectionInfo = self.networkList.item(selected).get("values", [])
+        if not selectionInfo:
+            return
+        network_id = selectionInfo[0]  # Use first column (Network ID)
+        networks = self.get_networks_info()
+        currentNetworkInfo = None
+        for net in networks:
+            if net.get("id") == network_id or net.get("nwid") == network_id:
+                currentNetworkInfo = net
+                break
+        if currentNetworkInfo is None:
+            return
 
-        # Récupération des informations sur le réseau sélectionné
-        currentNetworkInfo = self.get_networks_info()[idInList]
+        infoWindow = self.launch_sub_window("Network Info")
 
         # frames
         topFrame = tk.Frame(infoWindow, pady=30, bg=BACKGROUND)
@@ -978,3 +1021,16 @@ class MainWindow:
         bottomFrame.pack(side="top", fill="both")
 
         infoWindow.mainloop()
+
+    def create_window(self):
+        return tk.Tk(className="zerotier-gui")
+
+    def on_exit(self):
+        self.window.destroy()
+        sys.exit(0)
+
+
+if __name__ == '__main__':
+    mainWindow = MainWindow()
+    mainWindow.window.protocol("WM_DELETE_WINDOW", mainWindow.on_exit)
+    mainWindow.window.mainloop()
