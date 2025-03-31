@@ -27,6 +27,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
+from tkinter.simpledialog import askstring  # added import for askstring
 from subprocess import check_output, STDOUT, CalledProcessError
 import json
 from json import JSONDecodeError
@@ -34,6 +35,7 @@ from os import _exit, path, makedirs, environ
 from webbrowser import open_new_tab
 import sys
 from datetime import datetime
+import ctypes
 
 # Paths adapted for Windows
 BACKGROUND = "#d9d9d9"
@@ -66,6 +68,22 @@ class MainWindow:
         except CalledProcessError as e:
             messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
             return ""
+
+    # New helper to check if the user is an administrator
+    def _is_admin(self):
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        except:
+            return False
+
+    # Nouvelle fonction get_interface_name qui retourne le nom de l'interface
+    def get_interface_name(self, index):
+        networks = self.get_networks_info()
+        try:
+            network_id = networks[index]["id"]
+            return f"ZeroTier One [{network_id}]"
+        except (IndexError, KeyError):
+            return None
 
     def __init__(self):
         self.load_network_history()
@@ -113,13 +131,13 @@ class MainWindow:
         )
 
         self.networkList = ttk.Treeview(
-            self.middleFrame, columns=("Network ID", "Name", "Status")
+            self.middleFrame, columns=("Network ID", "Name", "Status", "State")
         )
         self._configure_treeview(
             self.networkList,
-            ["Network ID", "Name", "Status"],
-            [100, 150, 100],
-            ["Network ID", "Name", "Status"]
+            ["Network ID", "Name", "Status", "State"],
+            [100, 150, 100, 100],
+            ["Network ID", "Name", "Status", "State"]
         )
 
         self.networkList.bind("<Double-Button-1>", self.call_see_network_info)
@@ -143,10 +161,10 @@ class MainWindow:
         
         self.toggleConnectionButton = self.formatted_buttons(
             self.bottomFrame,
-            text="Disconnect/Connect Interface (Disabled on Windows)",
-            bg=BACKGROUND,
-            activebackground=BACKGROUND,
-            command=lambda: messagebox.showinfo("Info", "This function is not available on Windows"),
+            text="Disconnect/Connect Interface (Admin)",
+            bg=BUTTON_BACKGROUND,
+            activebackground=BUTTON_ACTIVE_BACKGROUND,
+            command=self.toggle_interface_connection,
         )
         
         self.infoButton = self.formatted_buttons(
@@ -238,11 +256,22 @@ class MainWindow:
         self.networkList.delete(*self.networkList.get_children())
         networkData = self.get_networks_info()
         data = [
-            (net["id"], net["name"] or "Unknown Name", net["status"], False)
-            for net in networkData
+            (net["id"],
+             net["name"] or "Unknown Name",
+             net["status"],
+             self.get_interface_state(self.get_interface_name(i))
+            )
+            for i, net in enumerate(networkData)
         ]
-        for networkId, networkName, networkStatus, _ in data:
-            self.networkList.insert("", "end", values=(networkId, networkName, networkStatus))
+        for networkId, networkName, networkStatus, state in data:
+            if not networkName:
+                networkName = "Unknown Name"
+            if state.lower() == "disabled":
+                self.networkList.insert("", "end", values=(networkId, networkName, networkStatus, state),
+                                        tags=("down",))
+            else:
+                self.networkList.insert("", "end", values=(networkId, networkName, networkStatus, state))
+        self.networkList.tag_configure("down", background="#ffcccc")
         self.update_network_history_names()
 
     def update_network_history_names(self):
@@ -570,14 +599,62 @@ class MainWindow:
         statusWindow.mainloop()
 
     def get_interface_state(self, interface):
-        return "UP"
+        try:
+            output = check_output(["netsh", "interface", "show", "interface"], stderr=STDOUT).decode(errors="replace")
+        except CalledProcessError:
+            return "UNKNOWN"
+        lines = output.splitlines()
+        # On saute les deux premières lignes (entête et séparateur)
+        import re
+        pattern = re.compile(r"^(?P<admin>\S+)\s+(?P<state>\S+)\s+(?P<type>\S+)\s+(?P<name>.+)$")
+        for line in lines[2:]:
+            match = pattern.match(line)
+            if match:
+                name = match.group("name").strip()
+                if name == interface:
+                    admin_state = match.group("admin").strip().lower()
+                    if admin_state.startswith("a") or admin_state.startswith("e"): # Start with "A" for Admin/Activé or "E" for Enabled/Activé
+                        return "Enabled"
+                    elif admin_state.startswith("d"): # Start with "D" for Disabled/Désactivé
+                        return "Disabled"
+                    else:
+                        return admin_state
+        return "UNKNOWN"
 
     def toggle_interface_connection(self):
-        messagebox.showinfo(
-            icon="info", 
-            title="Not available", 
-            message="The interface connect/disconnect function is not available on Windows"
-        )
+        # Obtenir le nom de l'interface à partir du réseau sélectionné
+        selected = self.networkList.focus()
+        if not selected:
+            messagebox.showinfo("Info", "No network selected")
+            return
+
+        index = self.networkList.index(selected)
+        interfaceName = self.get_interface_name(index)
+        if interfaceName is None:
+            interfaceName = askstring("Interface", "Entrez le nom de l'interface réseau :")
+            if not interfaceName:
+                return
+
+        if not self._is_admin():
+            answer = messagebox.askyesno("Admin rights required", "Administrative rights are required. Relaunch with elevated privileges?")
+            if answer:
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, __file__, None, 0)  # SW_HIDE = 0
+                sys.exit(0)
+            else:
+                return
+
+        # Basculer automatiquement selon l'état actuel sans confirmation supplémentaire
+        state = self.get_interface_state(interfaceName)
+        if state.lower() == "disabled":
+            command = f'netsh interface set interface name="{interfaceName}" admin=ENABLED'
+        else:
+            command = f'netsh interface set interface name="{interfaceName}" admin=DISABLED'
+
+        try:
+            check_output(command, shell=True, stderr=STDOUT)
+            self.refresh_networks()
+        except CalledProcessError as e:
+            messagebox.showerror("Error", f"Error toggling interface:\n{e.output.decode(errors='replace')}")
 
     def see_peer_paths(self, peerList):
         selected = peerList.focus()
@@ -783,8 +860,10 @@ class MainWindow:
     def update_main_buttons(self):
         if self.networkList.selection():
             self.infoButton["state"] = "normal"
+            self.toggleConnectionButton["state"] = "normal"   # Enabled when a network is selected
         else:
             self.infoButton["state"] = "disabled"
+            self.toggleConnectionButton["state"] = "disabled" # Disabled otherwise
 
 
 if __name__ == '__main__':
