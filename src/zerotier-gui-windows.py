@@ -34,8 +34,6 @@ from os import _exit, path, makedirs, environ
 from webbrowser import open_new_tab
 import sys
 from datetime import datetime
-import textwrap
-import ctypes
 
 # Paths adapted for Windows
 BACKGROUND = "#d9d9d9"
@@ -53,10 +51,26 @@ ZEROTIER_AUTH_TOKEN = path.join(ZEROTIER_DIR, "authtoken.secret")
 
 
 class MainWindow:
+    # New helper to configure a Treeview uniformly.
+    def _configure_treeview(self, tree, columns, widths, headings):
+        tree["show"] = "headings"
+        for col, width, heading in zip(columns, widths, headings):
+            tree.column(col, width=width)
+            tree.heading(col, text=heading)
+
+    # New helper to execute commands
+    def _execute_command(self, command: str) -> str:
+        try:
+            output = check_output(["cmd", "/c", command], stderr=STDOUT)
+            return output.decode()
+        except CalledProcessError as e:
+            messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
+            return ""
+
     def __init__(self):
         self.load_network_history()
 
-        self.window = self.create_window()  # Assurez-vous de créer la fenêtre principale
+        self.window = self.create_window()
 
         self.window.title("ZeroTier-GUI")
         self.window.resizable(width=False, height=False)
@@ -101,14 +115,12 @@ class MainWindow:
         self.networkList = ttk.Treeview(
             self.middleFrame, columns=("Network ID", "Name", "Status")
         )
-        self.networkList["show"] = "headings"
-        self.networkList.column("Network ID", width=100)
-        self.networkList.column("Name", width=150)
-        self.networkList.column("Status", width=100)
-        # Ajout des en-têtes pour les colonnes
-        self.networkList.heading("Network ID", text="Network ID")
-        self.networkList.heading("Name", text="Name")
-        self.networkList.heading("Status", text="Status")
+        self._configure_treeview(
+            self.networkList,
+            ["Network ID", "Name", "Status"],
+            [100, 150, 100],
+            ["Network ID", "Name", "Status"]
+        )
 
         self.networkList.bind("<Double-Button-1>", self.call_see_network_info)
         self.networkList.bind("<Button-1>", self.on_network_click)
@@ -129,7 +141,6 @@ class MainWindow:
             command=self.zt_central,
         )
         
-        # Boutons désactivés pour Windows
         self.toggleConnectionButton = self.formatted_buttons(
             self.bottomFrame,
             text="Disconnect/Connect Interface (Disabled on Windows)",
@@ -188,22 +199,11 @@ class MainWindow:
             except JSONDecodeError:
                 self.network_history = {}
 
-    # Méthodes liées aux services Linux supprimées ou désactivées
-    # toggle_service, get_service_status, update_service_label
-
     def zt_central(self):
         open_new_tab("https://my.zerotier.com")
 
     def call_see_network_info(self, event):
         self.see_network_info()
-
-    def _execute_command(self, command: str) -> str:
-        try:
-            output = check_output(["cmd", "/c", command], stderr=STDOUT)
-            return output.decode()
-        except CalledProcessError as e:
-            messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
-            return ""
 
     def refresh_paths(self, pathsList, idInList):
         pathsList.delete(*pathsList.get_children())
@@ -237,7 +237,6 @@ class MainWindow:
     def refresh_networks(self):
         self.networkList.delete(*self.networkList.get_children())
         networkData = self.get_networks_info()
-        # Using list comprehension for clarity.
         data = [
             (net["id"], net["name"] or "Unknown Name", net["status"], False)
             for net in networkData
@@ -289,7 +288,6 @@ class MainWindow:
 
         return subWindow
 
-    # creates entry widgets to select and copy text
     def selectable_text(
         self, frame, text, justify="left", font="TkDefaultFont"
     ):
@@ -311,7 +309,6 @@ class MainWindow:
 
         return entry
 
-    # creates correctly formatted buttons
     def formatted_buttons(
         self,
         frame,
@@ -345,12 +342,7 @@ class MainWindow:
         }
 
     def is_on_network(self, network_id):
-        currently_joined = False
-        for network in self.get_networks_info():
-            if currently_joined:
-                break
-            currently_joined = network["nwid"] == network_id
-        return currently_joined
+        return any(network["nwid"] == network_id for network in self.get_networks_info())
 
     def create_join_network_window(self):
         def join_network(network_id):
@@ -444,9 +436,9 @@ class MainWindow:
             text="Info",
             padx=10,
             pady=10,
-            width=300  # largeur minimale de 300px
+            width=300
         )
-        right_frame.grid_propagate(False)  # forcer la largeur fixée
+        right_frame.grid_propagate(False)
         bottom_frame = tk.Frame(main_frame, bg=BACKGROUND)
 
         join_button = self.formatted_buttons(
@@ -463,6 +455,8 @@ class MainWindow:
         join_title = tk.Label(main_frame, text="Join Network", font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
         join_title.grid(row=0, column=0, columnspan=2, pady=(0,10))
         network_history_list = ttk.Treeview(left_frame, columns=("Network",))
+        self._configure_treeview(network_history_list, ["Network"], [300], ["Network"])
+        network_history_list.configure(height=20, style="NoBackground.Treeview")
         network_history_scrollbar = tk.Scrollbar(
             left_frame, bd=2, bg=BACKGROUND
         )
@@ -471,14 +465,6 @@ class MainWindow:
         )
         network_history_scrollbar.config(command=network_history_list.yview)
 
-        network_history_list.style = ttk.Style()
-        network_history_list.style.configure(
-            "NoBackground.Treeview", background=BACKGROUND
-        )
-        network_history_list.configure(
-            show="tree", height=20, style="NoBackground.Treeview"
-        )
-        network_history_list.column("Network", width=300)
         network_history_list.bind("<<TreeviewSelect>>", on_network_selected)
         network_history_list.bind(
             "<Double-Button-1>", lambda _a: join_button.invoke()
@@ -556,17 +542,14 @@ class MainWindow:
         statusWindow = self.launch_sub_window("About")
         status = self.get_status()
         
-        # Create a main frame using grid to align the information
         contentFrame = tk.Frame(statusWindow, bg=BACKGROUND, padx=20, pady=20)
         contentFrame.grid(row=0, column=0, sticky="nsew")
         statusWindow.grid_rowconfigure(0, weight=1)
         statusWindow.grid_columnconfigure(0, weight=1)
         
-        # Title
         titleLabel = tk.Label(contentFrame, text="ZeroTier GUI", font=("TkDefaultFont", 18, "bold"), bg=BACKGROUND, fg=FOREGROUND)
         titleLabel.grid(row=0, column=0, columnspan=2, pady=(0,10))
         
-        # Detailed information
         labels = ["My ZeroTier Address:", "ZeroTier Version:", "ZeroTier GUI Version:", "Status:"]
         values = [status[2], status[3], "1.4.0 (Windows)", status[4]]
         for i, (lab, val) in enumerate(zip(labels, values), start=1):
@@ -578,7 +561,6 @@ class MainWindow:
         closeButton = self.formatted_buttons(contentFrame, text="Close", bg=BUTTON_BACKGROUND, activebackground=BUTTON_ACTIVE_BACKGROUND, command=statusWindow.destroy)
         closeButton.grid(row=i+1, column=0, columnspan=2, pady=(10,0), padx=10)
         
-        # Credits
         creditsLabel = tk.Label(contentFrame, text="GUI created by Tomás Ralph", bg=BACKGROUND, fg=FOREGROUND)
         creditsLink = tk.Label(contentFrame, text="github.com/tralph3/zerotier-gui", bg=BACKGROUND, fg="blue", cursor="hand2")
         creditsLink.bind("<Button-1>", lambda e: open_new_tab("https://github.com/tralph3/zerotier-gui"))
@@ -587,12 +569,9 @@ class MainWindow:
         
         statusWindow.mainloop()
 
-    # On Windows, we cannot easily obtain the interface state as on Linux
-    # We return "UP" by default
     def get_interface_state(self, interface):
         return "UP"
 
-    # Method disabled for Windows
     def toggle_interface_connection(self):
         messagebox.showinfo(
             icon="info", 
@@ -608,7 +587,6 @@ class MainWindow:
         if not info.get("values"):
             return
         peerId = info["values"][0]
-        # Find index of peer in the peers info list by matching address
         peers_info = self.get_peers_info()
         idx = None
         for i, peer in enumerate(peers_info):
@@ -618,37 +596,24 @@ class MainWindow:
         if idx is None:
             return
 
-        # Create a new window for displaying peer paths
         pathsWindow = self.launch_sub_window("Peer Path")
         pathsWindow.configure(bg=BACKGROUND)
 
-        # Create frames
         topFrame = tk.Frame(pathsWindow, padx=20, bg=BACKGROUND)
         middleFrame = tk.Frame(pathsWindow, padx=20, bg=BACKGROUND)
         bottomFrame = tk.Frame(pathsWindow, padx=20, pady=10, bg=BACKGROUND)
 
-        # Create widgets for paths display
         peerIdLabel = tk.Label(topFrame, font=40, bg=BACKGROUND, fg=FOREGROUND,
                                 text=f'Seeing paths for peer with ID "{str(peerId)}"')
         pathsListScrollbar = tk.Scrollbar(middleFrame, bd=2, bg=BACKGROUND)
         pathsList = ttk.Treeview(middleFrame, columns=("Active", "Address", "Expired", "Last Receive", "Last Send", "Preferred", "Trusted Path ID"))
-        pathsList["show"] = "headings"
-        pathsList.column("Active", width=90)
-        pathsList.column("Address", width=150)
-        pathsList.column("Expired", width=90)
-        pathsList.column("Last Receive", width=120)
-        pathsList.column("Last Send", width=120)
-        pathsList.column("Preferred", width=90)
-        pathsList.column("Trusted Path ID", width=90)
-        pathsList.heading("Active", text="Active")
-        pathsList.heading("Expired", text="Expired")
-        pathsList.heading("Address", text="Address")
-        pathsList.heading("Last Receive", text="Last Receive")
-        pathsList.heading("Last Send", text="Last Send")
-        pathsList.heading("Preferred", text="Preferred")
-        pathsList.heading("Trusted Path ID", text="Trusted Path ID")
+        self._configure_treeview(
+            pathsList,
+            ["Active", "Address", "Expired", "Last Receive", "Last Send", "Preferred", "Trusted Path ID"],
+            [90, 150, 90, 120, 120, 90, 90],
+            ["Active", "Expired", "Address", "Last Receive", "Last Send", "Preferred", "Trusted Path ID"]
+        )
 
-        # Pack widgets
         peerIdLabel.pack(side="top", fill="x")
         pathsListScrollbar.pack(side="right", fill="both")
         pathsList.pack(side="bottom", fill="x")
@@ -681,25 +646,21 @@ class MainWindow:
         peersWindow = self.launch_sub_window("Peers")
         peersWindow.configure(bg=BACKGROUND)
 
-        # frames
         topFrame = tk.Frame(peersWindow, padx=20, bg=BACKGROUND)
         middleFrame = tk.Frame(peersWindow, padx=20, bg=BACKGROUND)
         bottomFrame = tk.Frame(peersWindow, padx=20, pady=10, bg=BACKGROUND)
 
-        # widgets
         peersListScrollbar = tk.Scrollbar(middleFrame, bd=2, bg=BACKGROUND)
         peersList = ttk.Treeview(
             middleFrame, columns=("ZT Address", "Version", "Role", "Latency")
         )
-        peersList["show"] = "headings"
-        peersList.column("ZT Address", width=120)
-        peersList.column("Version", width=80)
-        peersList.column("Role", width=80)
-        peersList.column("Latency", width=80)
-        peersList.heading("ZT Address", text="ZT Address")
-        peersList.heading("Version", text="Version")
-        peersList.heading("Role", text="Role")
-        peersList.heading("Latency", text="Latency")
+        self._configure_treeview(
+            peersList,
+            ["ZT Address", "Version", "Role", "Latency"],
+            [120, 80, 80, 80],
+            ["ZT Address", "Version", "Role", "Latency"]
+        )
+
         peersList.bind("<Double-Button-1>", call_see_peer_paths)
         peersList.bind("<<TreeviewSelect>>", lambda e: update_peers_buttons_state())
 
@@ -726,7 +687,6 @@ class MainWindow:
         )
         seePathsButton["state"] = "disabled"
 
-        # pack widgets
         peersListScrollbar.pack(side="right", fill="both")
         peersList.pack(side="bottom", fill="x")
 
@@ -751,28 +711,21 @@ class MainWindow:
         selectionInfo = self.networkList.item(selected).get("values", [])
         if not selectionInfo:
             return
-        network_id = selectionInfo[0]  # Use first column (Network ID)
+        network_id = selectionInfo[0]
         networks = self.get_networks_info()
-        currentNetworkInfo = None
-        for net in networks:
-            if net.get("id") == network_id or net.get("nwid") == network_id:
-                currentNetworkInfo = net
-                break
+        currentNetworkInfo = next((net for net in networks if net.get("id") == network_id or net.get("nwid") == network_id), None)
         if currentNetworkInfo is None:
             return
 
         infoWindow = self.launch_sub_window("Network Info")
-        # Create a main frame using grid to align the information
         contentFrame = tk.Frame(infoWindow, bg=BACKGROUND, padx=20, pady=20)
         contentFrame.grid(row=0, column=0, sticky="nsew")
         infoWindow.grid_rowconfigure(0, weight=1)
         infoWindow.grid_columnconfigure(0, weight=1)
 
-        # Title
         titleLabel = tk.Label(contentFrame, text="Network Info", font=("TkDefaultFont", 18, "bold"), bg=BACKGROUND, fg=FOREGROUND)
         titleLabel.grid(row=0, column=0, columnspan=2, pady=(0,10))
 
-        # Fields to display
         fields = [
             ("Name:", currentNetworkInfo.get("name", "N/A")),
             ("Network ID:", currentNetworkInfo.get("id", "N/A")),
@@ -791,7 +744,6 @@ class MainWindow:
             l.grid(row=i, column=0, sticky="e", padx=(0,5), pady=2)
             v.grid(row=i, column=1, sticky="w", pady=2)
 
-        # Display Assigned Addresses
         row = i + 1
         addrs = currentNetworkInfo.get("assignedAddresses")
         if addrs:
@@ -823,15 +775,12 @@ class MainWindow:
         sys.exit(0)
 
     def on_network_click(self, event):
-        # If the click is not on a row, deselect the current selection
         item = self.networkList.identify_row(event.y)
         if item == "":
             self.networkList.selection_remove(self.networkList.selection())
-        # Pas de "break" pour ne pas bloquer le comportement par défaut
         return
 
     def update_main_buttons(self):
-        # Disable “Network Info” if no item is selected
         if self.networkList.selection():
             self.infoButton["state"] = "normal"
         else:
