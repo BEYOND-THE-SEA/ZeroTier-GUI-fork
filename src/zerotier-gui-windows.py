@@ -197,102 +197,53 @@ class MainWindow:
     def call_see_network_info(self, event):
         self.see_network_info()
 
+    def _execute_command(self, command: str) -> str:
+        try:
+            output = check_output(["cmd", "/c", command], stderr=STDOUT)
+            return output.decode()
+        except CalledProcessError as e:
+            messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
+            return ""
+
     def refresh_paths(self, pathsList, idInList):
         pathsList.delete(*pathsList.get_children())
-        paths = []
-        # outputs info of paths in json format
         pathsData = self.get_peers_info()[idInList]["paths"]
-
-        # get paths information in a list of tuples
-        for pathPosition in range(len(pathsData)):
-            paths.append(
-                (
-                    pathsData[pathPosition]["active"],
-                    pathsData[pathPosition]["address"],
-                    pathsData[pathPosition]["expired"],
-                    pathsData[pathPosition]["lastReceive"],
-                    pathsData[pathPosition]["lastSend"],
-                    pathsData[pathPosition]["preferred"],
-                    pathsData[pathPosition]["trustedPathId"],
-                )
+        data = [
+            (
+              path["active"],
+              path["address"],
+              path["expired"],
+              path["lastReceive"],
+              path["lastSend"],
+              path["preferred"],
+              path["trustedPathId"]
             )
-
-        # set paths in listbox
-        for (
-            pathActive,
-            pathAddress,
-            pathExpired,
-            pathLastReceive,
-            pathLastSend,
-            pathPreferred,
-            pathTrustedId,
-        ) in paths:
-            pathsList.insert(
-                "",
-                "end",
-                values=(
-                    str(pathActive),
-                    str(pathAddress),
-                    str(pathExpired),
-                    str(pathLastReceive),
-                    str(pathLastSend),
-                    str(pathPreferred),
-                    str(pathTrustedId),
-                )
-            )
+            for path in pathsData
+        ]
+        for tup in data:
+            pathsList.insert("", "end", values=tuple(str(v) for v in tup))
 
     def refresh_peers(self, peersList):
         peersList.delete(*peersList.get_children())
-        peers = []
-        # outputs info of peers in json format
         peersData = self.get_peers_info()
-
-        # get peers information in a list of tuples
-        for peerPosition in range(len(peersData)):
-            peers.append(
-                (
-                    peersData[peerPosition]["address"],
-                    peersData[peerPosition]["version"],
-                    peersData[peerPosition]["role"],
-                    peersData[peerPosition]["latency"],
-                )
-            )
-
-        # set peers in listbox
-        for peerAddress, peerVersion, peerRole, peerLatency in peers:
-            if peerVersion == "-1.-1.-1":
-                peerVersion = "-"
+        data = [
+            (peer["address"], "-" if peer["version"] == "-1.-1.-1" else peer["version"],
+             peer["role"], peer["latency"])
+            for peer in peersData
+        ]
+        for peerAddress, peerVersion, peerRole, peerLatency in data:
             peersList.insert("", "end", values=(peerAddress, peerVersion, peerRole, peerLatency))
 
     def refresh_networks(self):
         self.networkList.delete(*self.networkList.get_children())
-        networks = []
-        # outputs info of networks in json format
         networkData = self.get_networks_info()
-
-        # gets networks information in a list of tuples
-        for networkPosition in range(len(networkData)):
-            networks.append(
-                (
-                    networkData[networkPosition]["id"],
-                    networkData[networkPosition]["name"],
-                    networkData[networkPosition]["status"],
-                    False,  # isDown - non applicable sur Windows, on le met à False
-                )
-            )
-        # set networks in listbox
-        for (
-            networkId,
-            networkName,
-            networkStatus,
-            isDown,
-        ) in networks:
-            if not networkName:
-                networkName = "Unknown Name"
-            self.networkList.insert(
-                "", "end", values=(networkId, networkName, networkStatus)
-            )
-
+        # Using list comprehension for clarity.
+        data = [
+            (net["id"], net["name"] or "Unknown Name", net["status"], False)
+            for net in networkData
+        ]
+        for networkId, networkName, networkStatus, _ in data:
+            self.networkList.insert("", "end", values=(networkId, networkName, networkStatus))
         self.update_network_history_names()
 
     def update_network_history_names(self):
@@ -317,38 +268,19 @@ class MainWindow:
                 return network["name"]
 
     def get_networks_info(self):
-        # The command to execute
-        command = "zerotier-cli -j listnetworks"
-        try:
-            # We use cmd /c to launch the .bat in the PATH
-            output = check_output(["cmd", "/c", command], stderr=STDOUT)
-            # print(output.decode())
-            return json.loads(output.decode())
-        except CalledProcessError as e:
-            messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
-            return {}
+        cmd = "zerotier-cli -j listnetworks"
+        data = self._execute_command(cmd)
+        return json.loads(data) if data else {}
 
     def get_peers_info(self):
-        # The command to execute
-        command = "zerotier-cli -j peers"
-        try:
-            # We use cmd /c to launch the .bat in the PATH
-            output = check_output(["cmd", "/c", command], stderr=STDOUT)
-            return json.loads(output.decode())
-        except CalledProcessError as e:
-            messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
-            return {}
+        cmd = "zerotier-cli -j peers"
+        data = self._execute_command(cmd)
+        return json.loads(data) if data else {}
 
     def get_status(self):
-        # The command to execute
-        command = "zerotier-cli status"
-        try:
-            # We use cmd /c to launch the .bat in the PATH
-            output = check_output(["cmd", "/c", command], stderr=STDOUT)
-            return output.decode().split()
-        except CalledProcessError as e:
-            messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
-            return []
+        cmd = "zerotier-cli status"
+        data = self._execute_command(cmd)
+        return data.split() if data else []
 
     def launch_sub_window(self, title):
         subWindow = tk.Toplevel(self.window, class_="zerotier-gui")
