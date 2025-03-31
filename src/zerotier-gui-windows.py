@@ -37,17 +37,17 @@ from datetime import datetime
 import textwrap
 import ctypes
 
-# Chemins adaptés pour Windows
+# Paths adapted for Windows
 BACKGROUND = "#d9d9d9"
 FOREGROUND = "black"
 BUTTON_BACKGROUND = "#ffb253"
 BUTTON_ACTIVE_BACKGROUND = "#ffbf71"
 
-# Définition du répertoire pour l'historique sur Windows
+# Definition of the history directory on Windows
 HISTORY_FILE_DIRECTORY = path.join(environ["APPDATA"], "zerotier-gui")
 HISTORY_FILE_NAME = "network_history.json"
 
-# Chemins pour ZeroTier sur Windows
+# Paths for ZeroTier on Windows
 ZEROTIER_DIR = path.join(environ["ProgramData"], "ZeroTier", "One")
 ZEROTIER_AUTH_TOKEN = path.join(ZEROTIER_DIR, "authtoken.secret")
 
@@ -111,6 +111,8 @@ class MainWindow:
         self.networkList.heading("Status", text="Status")
 
         self.networkList.bind("<Double-Button-1>", self.call_see_network_info)
+        self.networkList.bind("<Button-1>", self.on_network_click)
+        self.networkList.bind("<<TreeviewSelect>>", lambda e: self.update_main_buttons())
 
         self.leaveButton = self.formatted_buttons(
             self.bottomFrame,
@@ -133,7 +135,7 @@ class MainWindow:
             text="Disconnect/Connect Interface (Disabled on Windows)",
             bg=BACKGROUND,
             activebackground=BACKGROUND,
-            command=lambda: messagebox.showinfo("Info", "Cette fonction n'est pas disponible sur Windows"),
+            command=lambda: messagebox.showinfo("Info", "This function is not available on Windows"),
         )
         
         self.infoButton = self.formatted_buttons(
@@ -143,21 +145,22 @@ class MainWindow:
             activebackground=BUTTON_ACTIVE_BACKGROUND,
             command=self.see_network_info,
         )
+        self.infoButton["state"] = "disabled"
 
         # pack widgets
-        self.networkLabel.pack(side="left", anchor="sw")
-        self.refreshButton.pack(side="right", anchor="se")
-        self.aboutButton.pack(side="right", anchor="sw")
-        self.peersButton.pack(side="right", anchor="sw")
-        self.joinButton.pack(side="right", anchor="se")
+        self.networkLabel.pack(side="left", anchor="sw", padx=10)
+        self.refreshButton.pack(side="right", anchor="se", padx=10)
+        self.aboutButton.pack(side="right", anchor="sw", padx=10)
+        self.peersButton.pack(side="right", anchor="sw", padx=10)
+        self.joinButton.pack(side="right", anchor="se", padx=10)
 
         self.networkListScrollbar.pack(side="right", fill="both")
         self.networkList.pack(side="bottom", fill="x")
 
-        self.leaveButton.pack(side="left", fill="x")
-        self.toggleConnectionButton.pack(side="left", fill="x")
-        self.infoButton.pack(side="right", fill="x")
-        self.ztCentralButton.pack(side="right", fill="x")
+        self.leaveButton.pack(side="left", fill="x", padx=10)
+        self.toggleConnectionButton.pack(side="left", fill="x", padx=10)
+        self.infoButton.pack(side="right", fill="x", padx=10)
+        self.ztCentralButton.pack(side="right", fill="x", padx=10)
 
         # frames
         self.topFrame.pack(side="top", fill="x")
@@ -314,37 +317,37 @@ class MainWindow:
                 return network["name"]
 
     def get_networks_info(self):
-        # La commande à exécuter
+        # The command to execute
         command = "zerotier-cli -j listnetworks"
         try:
-            # On utilise cmd /c afin de lancer le .bat présent dans le PATH
+            # We use cmd /c to launch the .bat in the PATH
             output = check_output(["cmd", "/c", command], stderr=STDOUT)
             # print(output.decode())
             return json.loads(output.decode())
         except CalledProcessError as e:
-            messagebox.showerror("Erreur", f"Erreur lors de l'exécution de la commande:\n{e.output.decode()}")
+            messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
             return {}
 
     def get_peers_info(self):
-        # La commande à exécuter
+        # The command to execute
         command = "zerotier-cli -j peers"
         try:
-            # On utilise cmd /c afin de lancer le .bat présent dans le PATH
+            # We use cmd /c to launch the .bat in the PATH
             output = check_output(["cmd", "/c", command], stderr=STDOUT)
             return json.loads(output.decode())
         except CalledProcessError as e:
-            messagebox.showerror("Erreur", f"Erreur lors de l'exécution de la commande:\n{e.output.decode()}")
+            messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
             return {}
 
     def get_status(self):
-        # La commande à exécuter
+        # The command to execute
         command = "zerotier-cli status"
         try:
-            # On utilise cmd /c afin de lancer le .bat présent dans le PATH
+            # We use cmd /c to launch the .bat in the PATH
             output = check_output(["cmd", "/c", command], stderr=STDOUT)
             return output.decode().split()
         except CalledProcessError as e:
-            messagebox.showerror("Erreur", f"Erreur lors de l'exécution de la commande:\n{e.output.decode()}")
+            messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
             return []
 
     def launch_sub_window(self, title):
@@ -485,9 +488,11 @@ class MainWindow:
 
         def delete_history_entry():
             selected_item = network_history_list.focus()
-            item_info = network_history_list.item(selected_item)["values"]
+            item_info = network_history_list.item(selected_item).get("values", [])
+            if len(item_info) < 2:
+                return
             network_id = item_info[1]
-            self.network_history.pop(network_id)
+            self.network_history.pop(network_id, None)
             populate_network_list()
 
         join_window = self.launch_sub_window("Join Network")
@@ -507,7 +512,9 @@ class MainWindow:
             text="Info",
             padx=10,
             pady=10,
+            width=300  # largeur minimale de 300px
         )
+        right_frame.grid_propagate(False)  # forcer la largeur fixée
         bottom_frame = tk.Frame(main_frame, bg=BACKGROUND)
 
         join_button = self.formatted_buttons(
@@ -521,9 +528,8 @@ class MainWindow:
             command=delete_history_entry,
         )
 
-        join_title = tk.Label(
-            main_frame, text="Join Network", font="Monospace"
-        )
+        join_title = tk.Label(main_frame, text="Join Network", font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
+        join_title.grid(row=0, column=0, columnspan=2, pady=(0,10))
         network_history_list = ttk.Treeview(left_frame, columns=("Network",))
         network_history_scrollbar = tk.Scrollbar(
             left_frame, bd=2, bg=BACKGROUND
@@ -557,57 +563,45 @@ class MainWindow:
         )
 
         network_id_label = tk.Label(
-            right_frame, font=("Monospace", 11), width=45, anchor="w"
+            right_frame, font=("Monospace", 11), anchor="w", bg=BACKGROUND, fg=FOREGROUND
         )
         network_name_label = tk.Label(
-            right_frame, font=("Monospace", 11), width=45, anchor="w"
+            right_frame, font=("Monospace", 11), anchor="w", bg=BACKGROUND, fg=FOREGROUND
         )
         last_joined_label = tk.Label(
-            right_frame,
-            font=("Monospace", 11),
-            width=45,
-            anchor="w",
+            right_frame, font=("Monospace", 11), anchor="w", bg=BACKGROUND, fg=FOREGROUND
         )
         currently_joined_label = tk.Label(
-            right_frame,
-            font=("Monospace", 11),
-            width=45,
-            anchor="w",
+            right_frame, font=("Monospace", 11), anchor="w", bg=BACKGROUND, fg=FOREGROUND
         )
+
+        network_id_label.grid(row=0, column=0, sticky="w", padx=2, pady=2)
+        network_name_label.grid(row=1, column=0, sticky="w", padx=2, pady=2)
+        last_joined_label.grid(row=2, column=0, sticky="w", padx=2, pady=2)
+        currently_joined_label.grid(row=3, column=0, sticky="w", padx=2, pady=2)
 
         populate_network_list()
         populate_info_sidebar()
 
-        join_title.pack(side="top")
         network_history_list.pack(side="left", padx=10, pady=10)
         network_history_scrollbar.pack(side="right", fill="y")
 
-        network_id_label.pack(side="top", anchor="w")
-        network_name_label.pack(side="top", anchor="w")
-        last_joined_label.pack(side="top", anchor="w")
-        currently_joined_label.pack(side="top", anchor="w")
+        join_label.grid(row=0, column=0, sticky="e", padx=(0,10), pady=2)
+        join_entry.grid(row=0, column=1, sticky="w", padx=(0,10), pady=2)
+        join_button.grid(row=0, column=2, sticky="w", padx=(0,10), pady=2)
+        delete_history_entry_button.grid(row=0, column=3, sticky="w", padx=(0,10), pady=2)
 
-        join_label.pack(side="left", anchor="w", pady=10)
-        join_entry.pack(side="left", anchor="w", pady=10)
-        join_button.pack(side="left", pady=10)
-        delete_history_entry_button.pack(side="left", pady=10)
-
-        left_frame.pack(side="left", fill="y", pady=10, padx=5)
-        right_frame.pack(side="right", fill="y", pady=10, padx=5)
-        middle_frame.pack(side="top", fill="both")
-        bottom_frame.pack(side="top", fill="both")
-        main_frame.pack(side="top", fill="x")
+        left_frame.grid(row=2, column=0, sticky="ns", padx=5, pady=10)
+        right_frame.grid(row=2, column=1, sticky="nsew", padx=5, pady=10)
+        middle_frame.grid(row=3, column=0, columnspan=2, sticky="nsew")
+        bottom_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
+        main_frame.pack(fill="both", expand=True)
 
     def leave_network(self):
-        # get selected network
-        try:
-            selectionId = int(self.networkList.focus())
-            selectionInfo = self.networkList.item(selectionId)
-        except TypeError:
-            messagebox.showinfo(
-                icon="info", title="Error", message="No network selected"
-            )
+        selected = self.networkList.focus()
+        if not selected:
             return
+        selectionInfo = self.networkList.item(selected)
         network = selectionInfo["values"][0]
         networkName = selectionInfo["values"][1]
         answer = messagebox.askyesno(
@@ -629,104 +623,49 @@ class MainWindow:
     def about_window(self):
         statusWindow = self.launch_sub_window("About")
         status = self.get_status()
-
-        # frames
-        topFrame = tk.Frame(statusWindow, padx=20, pady=30, bg=BACKGROUND)
-        middleFrame = tk.Frame(statusWindow, padx=20, pady=10, bg=BACKGROUND)
-        bottomTopFrame = tk.Frame(
-            statusWindow, padx=20, pady=10, bg=BACKGROUND
-        )
-        bottomFrame = tk.Frame(statusWindow, padx=20, pady=10, bg=BACKGROUND)
-
-        # widgets
-        titleLabel = tk.Label(
-            topFrame,
-            text="ZeroTier GUI",
-            font=70,
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-
-        ztAddrLabel = self.selectable_text(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("My ZeroTier Address:", status[2]),
-        )
-        versionLabel = tk.Label(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("ZeroTier Version:", status[3]),
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-        ztGuiVersionLabel = tk.Label(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("ZeroTier GUI Version:", "1.4.0 (Windows)"),
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-        statusLabel = tk.Label(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("Status:", status[4]),
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-
-        closeButton = self.formatted_buttons(
-            bottomTopFrame,
-            text="Close",
-            bg=BUTTON_BACKGROUND,
-            activebackground=BUTTON_ACTIVE_BACKGROUND,
-            command=lambda: statusWindow.destroy(),
-        )
-
-        # credits
-        creditsLabel1 = tk.Label(
-            bottomFrame,
-            text="GUI created by Tomás Ralph",
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-        creditsLabel2 = self.selectable_text(
-            bottomFrame,
-            text="github.com/tralph3/zerotier-gui",
-            justify="center",
-        )
-
-        # pack widgets
-        titleLabel.pack(side="top", anchor="n")
-
-        ztAddrLabel.pack(side="top", anchor="w")
-        versionLabel.pack(side="top", anchor="w")
-        ztGuiVersionLabel.pack(side="top", anchor="w")
-        statusLabel.pack(side="top", anchor="w")
-
-        closeButton.pack(side="top")
-
-        creditsLabel1.pack(side="top", fill="x")
-        creditsLabel2.pack(side="top")
-
-        topFrame.pack(side="top", fill="both")
-        middleFrame.pack(side="top", fill="both")
-        bottomTopFrame.pack(side="top", fill="both")
-        bottomFrame.pack(side="top", fill="both")
-
+        
+        # Create a main frame using grid to align the information
+        contentFrame = tk.Frame(statusWindow, bg=BACKGROUND, padx=20, pady=20)
+        contentFrame.grid(row=0, column=0, sticky="nsew")
+        statusWindow.grid_rowconfigure(0, weight=1)
+        statusWindow.grid_columnconfigure(0, weight=1)
+        
+        # Title
+        titleLabel = tk.Label(contentFrame, text="ZeroTier GUI", font=("TkDefaultFont", 18, "bold"), bg=BACKGROUND, fg=FOREGROUND)
+        titleLabel.grid(row=0, column=0, columnspan=2, pady=(0,10))
+        
+        # Detailed information
+        labels = ["My ZeroTier Address:", "ZeroTier Version:", "ZeroTier GUI Version:", "Status:"]
+        values = [status[2], status[3], "1.4.0 (Windows)", status[4]]
+        for i, (lab, val) in enumerate(zip(labels, values), start=1):
+            l = tk.Label(contentFrame, text=lab, font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
+            v = tk.Label(contentFrame, text=val, font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
+            l.grid(row=i, column=0, sticky="e", padx=(0,5), pady=2)
+            v.grid(row=i, column=1, sticky="w", pady=2)
+        
+        closeButton = self.formatted_buttons(contentFrame, text="Close", bg=BUTTON_BACKGROUND, activebackground=BUTTON_ACTIVE_BACKGROUND, command=statusWindow.destroy)
+        closeButton.grid(row=i+1, column=0, columnspan=2, pady=(10,0), padx=10)
+        
+        # Credits
+        creditsLabel = tk.Label(contentFrame, text="GUI created by Tomás Ralph", bg=BACKGROUND, fg=FOREGROUND)
+        creditsLink = tk.Label(contentFrame, text="github.com/tralph3/zerotier-gui", bg=BACKGROUND, fg="blue", cursor="hand2")
+        creditsLink.bind("<Button-1>", lambda e: open_new_tab("https://github.com/tralph3/zerotier-gui"))
+        creditsLabel.grid(row=i+2, column=0, columnspan=2, pady=(10,0))
+        creditsLink.grid(row=i+3, column=0, columnspan=2)
+        
         statusWindow.mainloop()
 
-    # Méthode désactivée pour Windows
+    # On Windows, we cannot easily obtain the interface state as on Linux
+    # We return "UP" by default
     def get_interface_state(self, interface):
-        # Sur Windows, nous ne pouvons pas facilement obtenir l'état de l'interface comme sur Linux
-        # Nous retournons "UP" par défaut
         return "UP"
 
-    # Méthode désactivée pour Windows
+    # Method disabled for Windows
     def toggle_interface_connection(self):
         messagebox.showinfo(
             icon="info", 
-            title="Non disponible", 
-            message="La fonction de connexion/déconnexion d'interface n'est pas disponible sur Windows"
+            title="Not available", 
+            message="The interface connect/disconnect function is not available on Windows"
         )
 
     def see_peer_paths(self, peerList):
@@ -784,8 +723,8 @@ class MainWindow:
 
         closeButton = self.formatted_buttons(bottomFrame, text="Close", command=lambda: pathsWindow.destroy())
         refreshButton = self.formatted_buttons(bottomFrame, text="Refresh Paths", command=lambda: self.refresh_paths(pathsList, idx))
-        closeButton.pack(side="left", fill="x")
-        refreshButton.pack(side="right", fill="x")
+        closeButton.pack(side="left", fill="x", padx=10)
+        refreshButton.pack(side="right", fill="x", padx=10)
 
         topFrame.pack(side="top", fill="x", pady=(30, 0))
         middleFrame.pack(side="top", fill="x")
@@ -800,6 +739,12 @@ class MainWindow:
     def see_peers(self):
         def call_see_peer_paths(_event):
             self.see_peer_paths(peersList)
+
+        def update_peers_buttons_state():
+            if peersList.selection():
+                seePathsButton["state"] = "normal"
+            else:
+                seePathsButton["state"] = "disabled"
 
         peersWindow = self.launch_sub_window("Peers")
         peersWindow.configure(bg=BACKGROUND)
@@ -824,6 +769,7 @@ class MainWindow:
         peersList.heading("Role", text="Role")
         peersList.heading("Latency", text="Latency")
         peersList.bind("<Double-Button-1>", call_see_peer_paths)
+        peersList.bind("<<TreeviewSelect>>", lambda e: update_peers_buttons_state())
 
         closeButton = self.formatted_buttons(
             bottomFrame,
@@ -846,14 +792,15 @@ class MainWindow:
             activebackground=BUTTON_ACTIVE_BACKGROUND,
             command=lambda: self.see_peer_paths(peersList),
         )
+        seePathsButton["state"] = "disabled"
 
         # pack widgets
         peersListScrollbar.pack(side="right", fill="both")
         peersList.pack(side="bottom", fill="x")
 
-        closeButton.pack(side="left", fill="x")
-        refreshButton.pack(side="right", fill="x")
-        seePathsButton.pack(side="right", fill="x")
+        closeButton.pack(side="left", fill="x", padx=10)
+        refreshButton.pack(side="right", fill="x", padx=10)
+        seePathsButton.pack(side="right", fill="x", padx=10)
 
         topFrame.pack(side="top", fill="x", pady=(30, 0))
         middleFrame.pack(side="top", fill="x")
@@ -883,143 +830,57 @@ class MainWindow:
             return
 
         infoWindow = self.launch_sub_window("Network Info")
+        # Create a main frame using grid to align the information
+        contentFrame = tk.Frame(infoWindow, bg=BACKGROUND, padx=20, pady=20)
+        contentFrame.grid(row=0, column=0, sticky="nsew")
+        infoWindow.grid_rowconfigure(0, weight=1)
+        infoWindow.grid_columnconfigure(0, weight=1)
 
-        # frames
-        topFrame = tk.Frame(infoWindow, pady=30, bg=BACKGROUND)
-        middleFrame = tk.Frame(infoWindow, padx=20, bg=BACKGROUND)
-        bottomFrame = tk.Frame(infoWindow, pady=10, bg=BACKGROUND)
+        # Title
+        titleLabel = tk.Label(contentFrame, text="Network Info", font=("TkDefaultFont", 18, "bold"), bg=BACKGROUND, fg=FOREGROUND)
+        titleLabel.grid(row=0, column=0, columnspan=2, pady=(0,10))
 
-        # Génération des widgets pour les adresses assignées
-        try:
-            assignedAddressesWidgets = []
-            # Premier widget
-            assignedAddressesWidgets.append(
-                self.selectable_text(
-                    middleFrame,
-                    "{:25s}{}".format(
-                        "Assigned Addresses:", currentNetworkInfo["assignedAddresses"][0]
-                    ),
-                    font="Monospace",
-                )
-            )
-            # Widgets suivants s'il y a plusieurs adresses
-            for address in currentNetworkInfo["assignedAddresses"][1:]:
-                assignedAddressesWidgets.append(
-                    self.selectable_text(
-                        middleFrame,
-                        "{:>42s}".format(address),
-                        font="Monospace",
-                    )
-                )
-        except (IndexError, KeyError):
-            assignedAddressesWidgets = []
-            assignedAddressesWidgets.append(
-                self.selectable_text(
-                    middleFrame,
-                    "{:25s}{}".format("Assigned Addresses:", "-"),
-                    font="Monospace",
-                )
-            )
+        # Fields to display
+        fields = [
+            ("Name:", currentNetworkInfo.get("name", "N/A")),
+            ("Network ID:", currentNetworkInfo.get("id", "N/A")),
+            ("Status:", currentNetworkInfo.get("status", "N/A")),
+            ("State:", "UP"),
+            ("Type:", currentNetworkInfo.get("type", "N/A")),
+            ("Device:", currentNetworkInfo.get("portDeviceName", "N/A")),
+            ("Bridge:", currentNetworkInfo.get("bridge", "N/A")),
+            ("MAC Address:", currentNetworkInfo.get("mac", "N/A")),
+            ("MTU:", currentNetworkInfo.get("mtu", "N/A")),
+            ("DHCP:", currentNetworkInfo.get("dhcp", "N/A"))
+        ]
+        for i, (lab, val) in enumerate(fields, start=1):
+            l = tk.Label(contentFrame, text=lab, font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
+            v = tk.Label(contentFrame, text=val, font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
+            l.grid(row=i, column=0, sticky="e", padx=(0,5), pady=2)
+            v.grid(row=i, column=1, sticky="w", pady=2)
 
-        # Création des widgets d'affichage
-        titleLabel = tk.Label(
-            topFrame,
-            text="Network Info",
-            font=70,
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-        nameLabel = self.selectable_text(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("Name:", currentNetworkInfo.get("name", "N/A")),
-        )
-        idLabel = self.selectable_text(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("Network ID:", currentNetworkInfo.get("id", "N/A")),
-        )
-        statusLabel = tk.Label(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("Status:", currentNetworkInfo.get("status", "N/A")),
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-        # Sur Windows, nous renvoyons "UP" par défaut pour l'état de l'interface
-        stateLabel = tk.Label(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("State:", "UP"),
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-        typeLabel = tk.Label(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("Type:", currentNetworkInfo.get("type", "N/A")),
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-        deviceLabel = self.selectable_text(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("Device:", currentNetworkInfo.get("portDeviceName", "N/A")),
-        )
-        bridgeLabel = tk.Label(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("Bridge:", currentNetworkInfo.get("bridge", "N/A")),
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
-        macLabel = self.selectable_text(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("MAC Address:", currentNetworkInfo.get("mac", "N/A")),
-        )
-        mtuLabel = self.selectable_text(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("MTU:", currentNetworkInfo.get("mtu", "N/A")),
-        )
-        dhcpLabel = tk.Label(
-            middleFrame,
-            font="Monospace",
-            text="{:25s}{}".format("DHCP:", currentNetworkInfo.get("dhcp", "N/A")),
-            bg=BACKGROUND,
-            fg=FOREGROUND,
-        )
+        # Display Assigned Addresses
+        row = i + 1
+        addrs = currentNetworkInfo.get("assignedAddresses")
+        if addrs:
+            l = tk.Label(contentFrame, text="Assigned Addresses:", font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
+            l.grid(row=row, column=0, sticky="ne", padx=(0,5), pady=2)
+            addrFrame = tk.Frame(contentFrame, bg=BACKGROUND)
+            addrFrame.grid(row=row, column=1, sticky="w", pady=2)
+            for j, addr in enumerate(addrs):
+                addrLabel = tk.Label(addrFrame, text=addr, font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
+                addrLabel.grid(row=j, column=0, sticky="w")
+            row += 1
+        else:
+            l = tk.Label(contentFrame, text="Assigned Addresses:", font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
+            v = tk.Label(contentFrame, text="-", font="Monospace", bg=BACKGROUND, fg=FOREGROUND)
+            l.grid(row=row, column=0, sticky="e", padx=(0,5), pady=2)
+            v.grid(row=row, column=1, sticky="w", pady=2)
+            row += 1
 
-        closeButton = self.formatted_buttons(
-            bottomFrame,
-            text="Close",
-            bg=BUTTON_BACKGROUND,
-            activebackground=BUTTON_ACTIVE_BACKGROUND,
-            command=lambda: infoWindow.destroy(),
-        )
-
-        # Pack des widgets
-        titleLabel.pack(side="top", anchor="n")
-        nameLabel.pack(side="top", anchor="w")
-        idLabel.pack(side="top", anchor="w")
-        for widget in assignedAddressesWidgets:
-            widget.pack(side="top", anchor="w")
-        statusLabel.pack(side="top", anchor="w")
-        stateLabel.pack(side="top", anchor="w")
-        typeLabel.pack(side="top", anchor="w")
-        deviceLabel.pack(side="top", anchor="w")
-        bridgeLabel.pack(side="top", anchor="w")
-        macLabel.pack(side="top", anchor="w")
-        mtuLabel.pack(side="top", anchor="w")
-        dhcpLabel.pack(side="top", anchor="w")
-        closeButton.pack(side="top")
-
-        # Pack des frames
-        topFrame.pack(side="top", fill="both")
-        middleFrame.pack(side="top", fill="both")
-        bottomFrame.pack(side="top", fill="both")
-
+        closeButton = self.formatted_buttons(contentFrame, text="Close", bg=BUTTON_BACKGROUND, activebackground=BUTTON_ACTIVE_BACKGROUND, command=infoWindow.destroy)
+        closeButton.grid(row=row, column=0, columnspan=2, pady=(10,0))
+        
         infoWindow.mainloop()
 
     def create_window(self):
@@ -1028,6 +889,21 @@ class MainWindow:
     def on_exit(self):
         self.window.destroy()
         sys.exit(0)
+
+    def on_network_click(self, event):
+        # If the click is not on a row, deselect the current selection
+        item = self.networkList.identify_row(event.y)
+        if item == "":
+            self.networkList.selection_remove(self.networkList.selection())
+        # Pas de "break" pour ne pas bloquer le comportement par défaut
+        return
+
+    def update_main_buttons(self):
+        # Disable “Network Info” if no item is selected
+        if self.networkList.selection():
+            self.infoButton["state"] = "normal"
+        else:
+            self.infoButton["state"] = "disabled"
 
 
 if __name__ == '__main__':
