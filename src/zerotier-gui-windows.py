@@ -76,7 +76,7 @@ class MainWindow:
         except:
             return False
 
-    # Nouvelle fonction get_interface_name qui retourne le nom de l'interface
+    # New function get_interface_name that returns the interface name
     def get_interface_name(self, index):
         networks = self.get_networks_info()
         try:
@@ -177,19 +177,19 @@ class MainWindow:
         self.infoButton["state"] = "disabled"
 
         # pack widgets
-        self.networkLabel.pack(side="left", anchor="sw", padx=10)
-        self.refreshButton.pack(side="right", anchor="se", padx=10)
-        self.aboutButton.pack(side="right", anchor="sw", padx=10)
-        self.peersButton.pack(side="right", anchor="sw", padx=10)
-        self.joinButton.pack(side="right", anchor="se", padx=10)
+        self.networkLabel.pack(side="left", anchor="sw", padx=5)
+        self.refreshButton.pack(side="right", anchor="se", padx=5)
+        self.aboutButton.pack(side="right", anchor="sw", padx=5)
+        self.peersButton.pack(side="right", anchor="sw", padx=5)
+        self.joinButton.pack(side="right", anchor="se", padx=5)
 
         self.networkListScrollbar.pack(side="right", fill="both")
         self.networkList.pack(side="bottom", fill="x")
 
-        self.leaveButton.pack(side="left", fill="x", padx=10)
-        self.toggleConnectionButton.pack(side="left", fill="x", padx=10)
-        self.infoButton.pack(side="right", fill="x", padx=10)
-        self.ztCentralButton.pack(side="right", fill="x", padx=10)
+        self.leaveButton.pack(side="left", fill="x", padx=5)
+        self.toggleConnectionButton.pack(side="left", fill="x", padx=5)
+        self.infoButton.pack(side="right", fill="x", padx=5)
+        self.ztCentralButton.pack(side="right", fill="x", padx=5)
 
         # frames
         self.topFrame.pack(side="top", fill="x")
@@ -599,12 +599,12 @@ class MainWindow:
         statusWindow.mainloop()
 
     def get_interface_state(self, interface):
+        # Skip the first two lines (header and separator)
         try:
             output = check_output(["netsh", "interface", "show", "interface"], stderr=STDOUT).decode(errors="replace")
         except CalledProcessError:
             return "UNKNOWN"
         lines = output.splitlines()
-        # On saute les deux premières lignes (entête et séparateur)
         import re
         pattern = re.compile(r"^(?P<admin>\S+)\s+(?P<state>\S+)\s+(?P<type>\S+)\s+(?P<name>.+)$")
         for line in lines[2:]:
@@ -613,16 +613,16 @@ class MainWindow:
                 name = match.group("name").strip()
                 if name == interface:
                     admin_state = match.group("admin").strip().lower()
-                    if admin_state.startswith("a") or admin_state.startswith("e"): # Start with "A" for Admin/Activé or "E" for Enabled/Activé
+                    if admin_state.startswith("a") or admin_state.startswith("e"):
                         return "Enabled"
-                    elif admin_state.startswith("d"): # Start with "D" for Disabled/Désactivé
+                    elif admin_state.startswith("d"):
                         return "Disabled"
                     else:
                         return admin_state
         return "UNKNOWN"
 
     def toggle_interface_connection(self):
-        # Obtenir le nom de l'interface à partir du réseau sélectionné
+        # Get the interface name from the selected network
         selected = self.networkList.focus()
         if not selected:
             messagebox.showinfo("Info", "No network selected")
@@ -631,7 +631,7 @@ class MainWindow:
         index = self.networkList.index(selected)
         interfaceName = self.get_interface_name(index)
         if interfaceName is None:
-            interfaceName = askstring("Interface", "Entrez le nom de l'interface réseau :")
+            interfaceName = askstring("Interface", "Enter the network interface name:")
             if not interfaceName:
                 return
 
@@ -643,7 +643,7 @@ class MainWindow:
             else:
                 return
 
-        # Basculer automatiquement selon l'état actuel sans confirmation supplémentaire
+        # Automatically toggle based on the current state without additional confirmation
         state = self.get_interface_state(interfaceName)
         if state.lower() == "disabled":
             command = f'netsh interface set interface name="{interfaceName}" admin=ENABLED'
