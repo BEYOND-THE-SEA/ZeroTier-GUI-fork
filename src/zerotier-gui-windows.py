@@ -37,30 +37,30 @@ import sys
 from datetime import datetime
 import ctypes
 
-# Paths adapted for Windows
-BACKGROUND = "#d9d9d9"
-FOREGROUND = "black"
-BUTTON_BACKGROUND = "#ffb253"
-BUTTON_ACTIVE_BACKGROUND = "#ffbf71"
+# Constants for UI colors and paths
+BACKGROUND = "#d9d9d9"  # Default background color
+FOREGROUND = "black"  # Default text color
+BUTTON_BACKGROUND = "#ffb253"  # Button background color
+BUTTON_ACTIVE_BACKGROUND = "#ffbf71"  # Button active background color
 
-# Definition of the history directory on Windows
+# Directory and file for storing network history
 HISTORY_FILE_DIRECTORY = path.join(environ["APPDATA"], "zerotier-gui")
 HISTORY_FILE_NAME = "network_history.json"
 
-# Paths for ZeroTier on Windows
+# Paths for ZeroTier configuration on Windows
 ZEROTIER_DIR = path.join(environ["ProgramData"], "ZeroTier", "One")
 ZEROTIER_AUTH_TOKEN = path.join(ZEROTIER_DIR, "authtoken.secret")
 
 
 class MainWindow:
-    # New helper to configure a Treeview uniformly.
+    # Configures a Treeview widget with specified columns, widths, and headings
     def _configure_treeview(self, tree, columns, widths, headings):
         tree["show"] = "headings"
         for col, width, heading in zip(columns, widths, headings):
             tree.column(col, width=width)
             tree.heading(col, text=heading)
 
-    # New helper to execute commands
+    # Executes a shell command and returns its output
     def _execute_command(self, command: str) -> str:
         try:
             output = check_output(["cmd", "/c", command], stderr=STDOUT)
@@ -69,14 +69,14 @@ class MainWindow:
             messagebox.showerror("Error", f"Error while executing the command:\n{e.output.decode()}")
             return ""
 
-    # New helper to check if the user is an administrator
+    # Checks if the current user has administrator privileges
     def _is_admin(self):
         try:
             return ctypes.windll.shell32.IsUserAnAdmin()
         except:
             return False
 
-    # New function get_interface_name that returns the interface name
+    # Retrieves the interface name for a given network index
     def get_interface_name(self, index):
         networks = self.get_networks_info()
         try:
@@ -85,23 +85,31 @@ class MainWindow:
         except (IndexError, KeyError):
             return None
 
+    # Verifies if ZeroTier is installed and accessible
+    def check_zerotier_installed(self):
+        import subprocess
+        try:
+            output = subprocess.check_output(["zerotier-cli", "-v"], stderr=subprocess.STDOUT)
+        except (CalledProcessError, FileNotFoundError):
+            messagebox.showerror("Error", "ZeroTier is not installed or not found.\nEnsure that ZeroTier is installed and available in PATH.")
+            sys.exit(1)
+
+    # Initializes the main application window and its components
     def __init__(self):
-        self.load_network_history()
+        self.check_zerotier_installed()  # Ensure ZeroTier is installed
+        self.load_network_history()  # Load network history from file
 
-        self.window = self.create_window()
-
+        self.window = self.create_window()  # Create the main application window
         self.window.title("ZeroTier-GUI")
         self.window.resizable(width=False, height=False)
 
-        # layout setup
+        # Layout setup: Define frames for organizing UI components
         self.topFrame = tk.Frame(self.window, padx=20, pady=10, bg=BACKGROUND)
         self.topBottomFrame = tk.Frame(self.window, padx=20, bg=BACKGROUND)
         self.middleFrame = tk.Frame(self.window, padx=20, bg=BACKGROUND)
-        self.bottomFrame = tk.Frame(
-            self.window, padx=20, pady=10, bg=BACKGROUND
-        )
+        self.bottomFrame = tk.Frame(self.window, padx=20, pady=10, bg=BACKGROUND)
 
-        # widgets
+        # Define and configure widgets for the UI
         self.networkLabel = tk.Label(
             self.topFrame,
             text="Joined Networks:",
@@ -126,10 +134,10 @@ class MainWindow:
             command=self.create_join_network_window,
         )
 
+        # Scrollbar and Treeview for displaying network information
         self.networkListScrollbar = tk.Scrollbar(
             self.middleFrame, bd=2, bg=BACKGROUND
         )
-
         self.networkList = ttk.Treeview(
             self.middleFrame, columns=("Network ID", "Name", "Status", "State")
         )
@@ -140,10 +148,12 @@ class MainWindow:
             ["Network ID", "Name", "Status", "State"]
         )
 
+        # Bind events to the Treeview for interaction
         self.networkList.bind("<Double-Button-1>", self.call_see_network_info)
         self.networkList.bind("<Button-1>", self.on_network_click)
         self.networkList.bind("<<TreeviewSelect>>", lambda e: self.update_main_buttons())
 
+        # Buttons for network actions
         self.leaveButton = self.formatted_buttons(
             self.bottomFrame,
             text="Leave Network",
@@ -158,7 +168,6 @@ class MainWindow:
             activebackground=BUTTON_ACTIVE_BACKGROUND,
             command=self.zt_central,
         )
-        
         self.toggleConnectionButton = self.formatted_buttons(
             self.bottomFrame,
             text="Disconnect/Connect Interface (Admin)",
@@ -166,7 +175,6 @@ class MainWindow:
             activebackground=BUTTON_ACTIVE_BACKGROUND,
             command=self.toggle_interface_connection,
         )
-        
         self.infoButton = self.formatted_buttons(
             self.bottomFrame,
             text="Network Info",
@@ -174,9 +182,9 @@ class MainWindow:
             activebackground=BUTTON_ACTIVE_BACKGROUND,
             command=self.see_network_info,
         )
-        self.infoButton["state"] = "disabled"
+        self.infoButton["state"] = "disabled"  # Initially disabled
 
-        # pack widgets
+        # Pack widgets into their respective frames
         self.networkLabel.pack(side="left", anchor="sw", padx=5)
         self.refreshButton.pack(side="right", anchor="se", padx=5)
         self.aboutButton.pack(side="right", anchor="sw", padx=5)
@@ -191,18 +199,18 @@ class MainWindow:
         self.infoButton.pack(side="right", fill="x", padx=5)
         self.ztCentralButton.pack(side="right", fill="x", padx=5)
 
-        # frames
+        # Pack frames into the main window
         self.topFrame.pack(side="top", fill="x")
         self.topBottomFrame.pack(side="top", fill="x")
         self.middleFrame.pack(side="top", fill="x")
         self.bottomFrame.pack(side="top", fill="x")
 
-        # extra configuration
+        # Refresh network list and configure scrollbar
         self.refresh_networks()
-
         self.networkList.config(yscrollcommand=self.networkListScrollbar.set)
         self.networkListScrollbar.config(command=self.networkList.yview)
 
+    # Loads network history from a JSON file
     def load_network_history(self):
         history_file_path = path.join(
             HISTORY_FILE_DIRECTORY, HISTORY_FILE_NAME
@@ -217,12 +225,15 @@ class MainWindow:
             except JSONDecodeError:
                 self.network_history = {}
 
+    # Opens the ZeroTier Central website in a browser
     def zt_central(self):
         open_new_tab("https://my.zerotier.com")
 
+    # Calls the network info window when a network is double-clicked
     def call_see_network_info(self, event):
         self.see_network_info()
 
+    # Refreshes the list of paths for a specific peer
     def refresh_paths(self, pathsList, idInList):
         pathsList.delete(*pathsList.get_children())
         pathsData = self.get_peers_info()[idInList]["paths"]
@@ -241,6 +252,7 @@ class MainWindow:
         for tup in data:
             pathsList.insert("", "end", values=tuple(str(v) for v in tup))
 
+    # Refreshes the list of peers
     def refresh_peers(self, peersList):
         peersList.delete(*peersList.get_children())
         peersData = self.get_peers_info()
@@ -252,6 +264,7 @@ class MainWindow:
         for peerAddress, peerVersion, peerRole, peerLatency in data:
             peersList.insert("", "end", values=(peerAddress, peerVersion, peerRole, peerLatency))
 
+    # Refreshes the list of networks
     def refresh_networks(self):
         self.networkList.delete(*self.networkList.get_children())
         networkData = self.get_networks_info()
@@ -274,6 +287,7 @@ class MainWindow:
         self.networkList.tag_configure("down", background="#ffcccc")
         self.update_network_history_names()
 
+    # Updates network history with names from the current network list
     def update_network_history_names(self):
         networks = self.get_networks_info()
         for network in networks:
@@ -282,6 +296,7 @@ class MainWindow:
             if network_id in self.network_history:
                 self.network_history[network_id]["name"] = network_name
 
+    # Saves network history to a JSON file
     def save_network_history(self):
         history_file_path = path.join(
             HISTORY_FILE_DIRECTORY, HISTORY_FILE_NAME
@@ -289,27 +304,32 @@ class MainWindow:
         with open(history_file_path, "w") as f:
             json.dump(self.network_history, f)
 
+    # Retrieves the name of a network by its ID
     def get_network_name_by_id(self, network_id):
         networks = self.get_networks_info()
         for network in networks:
             if network_id == network["nwid"]:
                 return network["name"]
 
+    # Retrieves information about all networks
     def get_networks_info(self):
         cmd = "zerotier-cli -j listnetworks"
         data = self._execute_command(cmd)
         return json.loads(data) if data else {}
 
+    # Retrieves information about all peers
     def get_peers_info(self):
         cmd = "zerotier-cli -j peers"
         data = self._execute_command(cmd)
         return json.loads(data) if data else {}
 
+    # Retrieves the status of ZeroTier
     def get_status(self):
         cmd = "zerotier-cli status"
         data = self._execute_command(cmd)
         return data.split() if data else []
 
+    # Launches a sub-window with a specified title
     def launch_sub_window(self, title):
         subWindow = tk.Toplevel(self.window, class_="zerotier-gui")
         subWindow.title(title)
@@ -317,6 +337,7 @@ class MainWindow:
 
         return subWindow
 
+    # Creates a selectable text widget
     def selectable_text(
         self, frame, text, justify="left", font="TkDefaultFont"
     ):
@@ -338,6 +359,7 @@ class MainWindow:
 
         return entry
 
+    # Creates a formatted button widget
     def formatted_buttons(
         self,
         frame,
@@ -361,6 +383,7 @@ class MainWindow:
         )
         return button
 
+    # Adds a network to the history
     def add_network_to_history(self, network_id):
         network_name = self.get_network_name_by_id(network_id)
         date = datetime.now()
@@ -370,9 +393,11 @@ class MainWindow:
             "join_date": join_date,
         }
 
+    # Checks if the user is currently on a network
     def is_on_network(self, network_id):
         return any(network["nwid"] == network_id for network in self.get_networks_info())
 
+    # Creates a window for joining a network
     def create_join_network_window(self):
         def join_network(network_id):
             try:
@@ -544,6 +569,7 @@ class MainWindow:
         bottom_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
         main_frame.pack(fill="both", expand=True)
 
+    # Leaves a network
     def leave_network(self):
         selected = self.networkList.focus()
         if not selected:
@@ -567,6 +593,7 @@ class MainWindow:
         messagebox.showinfo(icon="info", message=leaveResult)
         self.refresh_networks()
 
+    # Displays the About window
     def about_window(self):
         statusWindow = self.launch_sub_window("About")
         status = self.get_status()
@@ -598,6 +625,7 @@ class MainWindow:
         
         statusWindow.mainloop()
 
+    # Retrieves the state of a network interface
     def get_interface_state(self, interface):
         # Skip the first two lines (header and separator)
         try:
@@ -621,6 +649,7 @@ class MainWindow:
                         return admin_state
         return "UNKNOWN"
 
+    # Toggles the connection state of a network interface
     def toggle_interface_connection(self):
         # Get the interface name from the selected network
         selected = self.networkList.focus()
@@ -656,6 +685,7 @@ class MainWindow:
         except CalledProcessError as e:
             messagebox.showerror("Error", f"Error toggling interface:\n{e.output.decode(errors='replace')}")
 
+    # Displays paths for a specific peer
     def see_peer_paths(self, peerList):
         selected = peerList.focus()
         if not selected:
@@ -710,6 +740,7 @@ class MainWindow:
 
         pathsWindow.mainloop()
 
+    # Displays the peers window
     def see_peers(self):
         def call_see_peer_paths(_event):
             self.see_peer_paths(peersList)
@@ -781,6 +812,7 @@ class MainWindow:
 
         peersWindow.mainloop()
 
+    # Displays information about a selected network
     def see_network_info(self):
         selected = self.networkList.focus()
         if not selected:
@@ -844,19 +876,23 @@ class MainWindow:
         
         infoWindow.mainloop()
 
+    # Creates the main application window
     def create_window(self):
         return tk.Tk(className="zerotier-gui")
 
+    # Handles application exit
     def on_exit(self):
         self.window.destroy()
         sys.exit(0)
 
+    # Handles network list click events
     def on_network_click(self, event):
         item = self.networkList.identify_row(event.y)
         if item == "":
             self.networkList.selection_remove(self.networkList.selection())
         return
 
+    # Updates the state of main buttons based on network selection
     def update_main_buttons(self):
         if self.networkList.selection():
             self.infoButton["state"] = "normal"
