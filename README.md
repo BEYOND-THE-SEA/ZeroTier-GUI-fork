@@ -6,10 +6,12 @@
 **A Linux front-end for ZeroTier**
 
 ### Manage Networks
+
 <img src="img/managenetworks1.png " width="1000">
 <img src="img/managenetworks2.png " width="1000">
 
 ### Manage Peers
+
 <img src="img/managepeers.png " width="1000">
 
 # Installation
@@ -20,11 +22,9 @@ You can download the software from the [AUR](https://aur.archlinux.org/packages/
 
 If you are in an Ubuntu/Debian based distribution, you can download the source code and run the `make_deb.sh` script.
 
-    ./make_deb.sh
-
-You may need to mark it as executable first:
-
     chmod +x make_deb.sh
+    ./make_deb.sh
+    sudo apt install --reinstall ./ZeroTier-GUI.deb
 
 **The script must be ran on the project's root folder, make sure to `cd` into it.**
 
@@ -49,7 +49,7 @@ With Docker and Makefile available, you just need to run the following command:
 make run
 ```
 
-The expected result both ```rpm``` and ```deb``` files in project root. If you don't have Make available, you can run these commands line by line, as follows:
+The expected result both `rpm` and `deb` files in project root. If you don't have Make available, you can run these commands line by line, as follows:
 
 ```
 docker build . -t zero-tier-platforms-build:latest
