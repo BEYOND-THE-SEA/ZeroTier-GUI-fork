@@ -16,11 +16,7 @@
 
 # Installation
 
-You can download the software from the [AUR](https://aur.archlinux.org/packages/zerotier-gui-git/).
-
-    paru -S zerotier-gui-git
-
-If you are in an Ubuntu/Debian based distribution, you can download the source code and run the `make_deb.sh` script.
+Ubuntu/Debian based distribution, you can download the source code and run the `make_deb.sh` script.
 
     chmod +x make_deb.sh
     ./make_deb.sh
