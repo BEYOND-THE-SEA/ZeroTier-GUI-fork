@@ -1,0 +1,144 @@
+#!/usr/bin/python3
+
+import re
+import shutil
+import subprocess
+import sys
+from os import path as ospath
+
+
+def fail(msg: str, code: int = 2) -> None:
+    print(msg, file=sys.stderr)
+    raise SystemExit(code)
+
+
+def validate_ifname(ifname: str) -> None:
+    # Keep this strict: only allow ZeroTier-like interface names.
+    if not re.fullmatch(r"zt[a-zA-Z0-9_.:-]{0,30}", ifname):
+        fail(f"Invalid interface name: {ifname!r}", 2)
+    try:
+        subprocess.check_output(
+            ["ip", "link", "show", "dev", ifname], stderr=subprocess.STDOUT
+        )
+    except subprocess.CalledProcessError as e:
+        out = e.output.decode(errors="replace").strip()
+        fail(f"Interface does not exist: {ifname!r}\n{out}", 3)
+
+
+def validate_username(username: str) -> None:
+    if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", username):
+        fail(f"Invalid username: {username!r}", 2)
+
+
+def grant_acl(username: str) -> None:
+    validate_username(username)
+    if shutil.which("setfacl") is None:
+        fail("setfacl not found (install the acl package)", 127)
+
+    base = "/var/lib/zerotier-one"
+    token = f"{base}/authtoken.secret"
+    identity = f"{base}/identity.secret"
+
+    # Reset stale ACLs then apply a clean ACL set.
+    subprocess.run(["setfacl", "-b", base], check=False)
+    subprocess.run(["setfacl", "-b", token], check=False)
+    subprocess.run(["setfacl", "-b", identity], check=False)
+
+    subprocess.check_output(
+        ["setfacl", "-m", f"u:{username}:rx,m::rx", base], stderr=subprocess.STDOUT
+    )
+    subprocess.check_output(
+        ["setfacl", "-m", f"u:{username}:rw-,m::rw-", token], stderr=subprocess.STDOUT
+    )
+    subprocess.check_output(
+        ["setfacl", "-m", f"u:{username}:rw-,m::rw-", identity], stderr=subprocess.STDOUT
+    )
+
+
+def install_persistent_acl_service(username: str) -> None:
+    validate_username(username)
+    service_path = "/etc/systemd/system/zerotier-gui-acl.service"
+    service_content = f"""[Unit]
+Description=Re-apply ZeroTier GUI ACL permissions
+After=zerotier-one.service
+Wants=zerotier-one.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/zerotier-gui-helper grant-acl {username}
+
+[Install]
+WantedBy=multi-user.target
+"""
+    with open(service_path, "w", encoding="utf-8") as f:
+        f.write(service_content)
+
+    subprocess.check_output(["systemctl", "daemon-reload"], stderr=subprocess.STDOUT)
+    subprocess.check_output(
+        ["systemctl", "enable", "zerotier-gui-acl.service"], stderr=subprocess.STDOUT
+    )
+    # Apply immediately as well.
+    subprocess.check_output(
+        ["systemctl", "start", "zerotier-gui-acl.service"], stderr=subprocess.STDOUT
+    )
+
+
+def uninstall_persistent_acl_service() -> None:
+    service_name = "zerotier-gui-acl.service"
+    service_path = "/etc/systemd/system/zerotier-gui-acl.service"
+
+    subprocess.run(["systemctl", "stop", service_name], check=False, stderr=subprocess.DEVNULL)
+    subprocess.run(["systemctl", "disable", service_name], check=False, stderr=subprocess.DEVNULL)
+
+    if ospath.exists(service_path):
+        try:
+            # Use rm to avoid permission edge cases in constrained environments.
+            subprocess.check_output(["rm", "-f", service_path], stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            out = e.output.decode(errors="replace").strip()
+            fail(f"Failed to remove {service_path}: {out}", 3)
+
+    subprocess.check_output(["systemctl", "daemon-reload"], stderr=subprocess.STDOUT)
+    subprocess.run(["systemctl", "reset-failed", service_name], check=False, stderr=subprocess.DEVNULL)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        fail("Usage: zerotier-gui-helper <command> [...]", 2)
+
+    cmd = argv[1]
+    if cmd == "ip-link-set":
+        if len(argv) != 4:
+            fail("Usage: zerotier-gui-helper ip-link-set <ifname> up|down", 2)
+        ifname = argv[2]
+        state = argv[3].lower()
+        if state not in {"up", "down"}:
+            fail("State must be 'up' or 'down'", 2)
+        validate_ifname(ifname)
+        subprocess.check_output(
+            ["ip", "link", "set", ifname, state], stderr=subprocess.STDOUT
+        )
+        return 0
+    if cmd == "grant-acl":
+        if len(argv) != 3:
+            fail("Usage: zerotier-gui-helper grant-acl <username>", 2)
+        grant_acl(argv[2])
+        return 0
+    if cmd == "install-persistent-acl":
+        if len(argv) != 3:
+            fail("Usage: zerotier-gui-helper install-persistent-acl <username>", 2)
+        install_persistent_acl_service(argv[2])
+        return 0
+    if cmd == "uninstall-persistent-acl":
+        if len(argv) != 2:
+            fail("Usage: zerotier-gui-helper uninstall-persistent-acl", 2)
+        uninstall_persistent_acl_service()
+        return 0
+
+    fail(f"Unknown command: {cmd!r}", 2)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
+

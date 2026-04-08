@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 #
 # A Linux front-end for ZeroTier
 # Copyright (C) 2023  Tomás Ralph
@@ -29,7 +29,7 @@ from tkinter import messagebox
 from subprocess import check_output, STDOUT, CalledProcessError
 import json
 from json import JSONDecodeError
-from os import getuid, system, _exit, path, makedirs
+from os import getuid, _exit, path, makedirs
 from webbrowser import open_new_tab
 import sys
 from datetime import datetime
@@ -42,13 +42,22 @@ BUTTON_ACTIVE_BACKGROUND = "#ffbf71"
 
 HISTORY_FILE_DIRECTORY = path.expanduser("~/.local/share/zerotier-gui")
 HISTORY_FILE_NAME = "network_history.json"
+HELPER_PATH = "/usr/libexec/zerotier-gui-helper"
+
+
+def is_acl_service_enabled():
+    try:
+        out = check_output(["systemctl", "is-enabled", "zerotier-gui-acl.service"], stderr=STDOUT)
+        return out.decode().strip() == "enabled"
+    except Exception:
+        return False
 
 
 class MainWindow:
-    def __init__(self):
+    def __init__(self, root: tk.Tk):
         self.load_network_history()
 
-        self.window = tk.Tk(className="zerotier-gui")
+        self.window = root
         self.window.title("ZeroTier-GUI")
         self.window.resizable(width=False, height=False)
 
@@ -67,6 +76,13 @@ class MainWindow:
             font=40,
             bg=BACKGROUND,
             fg=FOREGROUND,
+        )
+        self.uninstallAclButton = self.formatted_buttons(
+            self.topFrame,
+            text="ACL",
+            bg=BACKGROUND,
+            activebackground=BACKGROUND,
+            command=self.uninstall_acl_service,
         )
         self.refreshButton = self.formatted_buttons(
             self.topFrame,
@@ -137,6 +153,7 @@ class MainWindow:
         )
 
         # pack widgets
+        self.uninstallAclButton.pack(side="left", anchor="sw")
         self.networkLabel.pack(side="left", anchor="sw")
         self.refreshButton.pack(side="right", anchor="se")
         self.aboutButton.pack(side="right", anchor="sw")
@@ -165,6 +182,9 @@ class MainWindow:
 
         self.networkList.config(yscrollcommand=self.networkListScrollbar.set)
         self.networkListScrollbar.config(command=self.networkList.yview)
+
+        # show the main window after preflight popups
+        self.window.deiconify()
 
     def load_network_history(self):
         history_file_path = path.join(
@@ -206,6 +226,33 @@ class MainWindow:
 
     def zt_central(self):
         open_new_tab("https://my.zerotier.com")
+
+    def uninstall_acl_service(self):
+        answer = messagebox.askyesno(
+            title="Disable ACL service",
+            message="Disable the ZeroTier-GUI ACL service?\n\n"
+            "This may cause password prompts again after reboot.",
+            icon="warning",
+        )
+        if not answer:
+            return
+        try:
+            check_output(
+                ["pkexec", HELPER_PATH, "uninstall-persistent-acl"],
+                stderr=STDOUT,
+            )
+            messagebox.showinfo(
+                title="Service removed",
+                message="ACL service was removed successfully.",
+                icon="info",
+            )
+        except CalledProcessError as error:
+            details = error.output.decode(errors="replace").strip()
+            messagebox.showinfo(
+                title="Error",
+                message=f"Failed to remove service.\n\n{details}",
+                icon="error",
+            )
 
     def call_see_network_info(self, event):
         self.see_network_info()
@@ -739,15 +786,20 @@ class MainWindow:
 
         if state.lower() == "down":
             check_output(
-                ["pkexec", "ip", "link", "set", currentNetworkInterface, "up"]
+                [
+                    "pkexec",
+                    HELPER_PATH,
+                    "ip-link-set",
+                    currentNetworkInterface,
+                    "up",
+                ]
             )
         else:
             check_output(
                 [
                     "pkexec",
-                    "ip",
-                    "link",
-                    "set",
+                    HELPER_PATH,
+                    "ip-link-set",
                     currentNetworkInterface,
                     "down",
                 ]
@@ -1216,7 +1268,8 @@ def manage_service(action):
 
 def setup_auth_token():
     if getuid() == 0:
-        return
+        return True
+
     if not path.isfile("/var/lib/zerotier-one/authtoken.secret"):
         allowed_to_start_service = messagebox.askyesno(
             icon="info",
@@ -1228,48 +1281,60 @@ def setup_auth_token():
                 never started the zerotier-one service.
                 Do you wish to start it now?
                 """
-            )
+            ),
         )
         if allowed_to_start_service:
             manage_service("start")
         else:
-            _exit(0)
+            return False
+
     username = check_output(["whoami"]).decode().strip()
-    allowed_to_run_as_root = messagebox.askyesno(
-        icon="info",
-        title="Root access needed",
-        message=f"In order to grant {username} permission "
-        "to use ZeroTier we need temporary root access to "
-        "add them to the zerotier-one group and change the "
-        "auth-token permissions in /var/lib/zerotier-one. "
-        "Otherwise, you would need to run this "
-        "program as root. Grant access?",
-    )
-    if allowed_to_run_as_root:
-        system(textwrap.dedent(
-            f"""\
-            pkexec bash -c "usermod -aG zerotier-one {username} &&
-            chmod 660 /var/lib/zerotier-one/authtoken.secret &&
-            chmod 660 /var/lib/zerotier-one/identity.secret"
-            """
-        ))
-        messagebox.showinfo(
-            title="Success",
-            message=textwrap.dedent(
-                """\
-                You were successfully added to the zerotier-one
-                group. If you're still having problems, you may need
-                to re-login in order for the changes to take effect.
-                """
-            )
+    was_enabled = is_acl_service_enabled()
+
+    try:
+        check_output(
+            [
+                "pkexec",
+                HELPER_PATH,
+                "install-persistent-acl",
+                username,
+            ],
+            stderr=STDOUT,
         )
-    _exit(0)
+    except FileNotFoundError:
+        messagebox.showinfo(
+            title="Error",
+            icon="error",
+            message="pkexec was not found. Please install PolicyKit (policykit-1).",
+        )
+        return False
+    except CalledProcessError as error:
+        details = ""
+        try:
+            details = error.output.decode(errors="replace").strip()
+        except Exception:
+            details = str(error)
+        messagebox.showinfo(
+            title="Error",
+            icon="error",
+            message=f"Failed to update permissions (was authentication cancelled?).\n\n{details}",
+        )
+        return False
+    if not was_enabled:
+        messagebox.showinfo(
+            title="Service added",
+            message="ACL service was added successfully.\n\n"
+            "It will keep ZeroTier-GUI access working after reboot.",
+            icon="info",
+        )
+
+    return True
 
 
 if __name__ == "__main__":
-    # temporary window for popups
-    tmp = tk.Tk()
-    tmp.withdraw()
+    # single root window (used for popups, then main UI)
+    root = tk.Tk(className="zerotier-gui")
+    root.withdraw()
 
     # simple check for zerotier
     while True:
@@ -1279,13 +1344,14 @@ if __name__ == "__main__":
         except CalledProcessError as error:
             # no zerotier authtoken
             if error.returncode == 2:
+                if setup_auth_token():
+                    continue
                 messagebox.showinfo(
                     title="Error",
                     icon="error",
-                    message="This user doesn't have access to ZeroTier!",
+                    message="Unable to get access to ZeroTier for this user.",
                 )
-                setup_auth_token()
-                continue
+                _exit(1)
             # service not running
             if error.returncode == 1:
                 allowed_to_enable_service = messagebox.askyesno(
@@ -1317,9 +1383,7 @@ if __name__ == "__main__":
             print("ZeroTier isn't installed", file=sys.stderr)
             _exit(127)
         break
-    # destroy temporary window
-    tmp.destroy()
     # create mainwindow class and execute the mainloop
-    mainWindow = MainWindow()
-    mainWindow.window.protocol("WM_DELETE_WINDOW", mainWindow.on_exit)
-    mainWindow.window.mainloop()
+    mainWindow = MainWindow(root)
+    root.protocol("WM_DELETE_WINDOW", mainWindow.on_exit)
+    root.mainloop()
