@@ -112,6 +112,7 @@ class MainWindow:
         self.networkList.column("Status", width=40)
 
         self.networkList.bind("<Double-Button-1>", self.call_see_network_info)
+        self.networkList.bind("<<TreeviewSelect>>", self.update_button_states)
 
         self.leaveButton = self.formatted_buttons(
             self.bottomFrame,
@@ -151,6 +152,21 @@ class MainWindow:
             activebackground=BUTTON_ACTIVE_BACKGROUND,
             command=self.see_network_info,
         )
+        self.focusButton = self.formatted_buttons(
+            self.bottomFrame,
+            text="Focus",
+            bg=BUTTON_BACKGROUND,
+            activebackground=BUTTON_ACTIVE_BACKGROUND,
+            command=self.focus_network,
+        )
+
+        for button in (
+            self.leaveButton,
+            self.toggleConnectionButton,
+            self.infoButton,
+            self.focusButton,
+        ):
+            button.configure(state=tk.DISABLED)
 
         # pack widgets
         self.uninstallAclButton.pack(side="left", anchor="sw")
@@ -165,6 +181,7 @@ class MainWindow:
 
         self.leaveButton.pack(side="left", fill="x")
         self.toggleConnectionButton.pack(side="left", fill="x")
+        self.focusButton.pack(side="left", fill="x")
         self.infoButton.pack(side="right", fill="x")
         self.ztCentralButton.pack(side="right", fill="x")
         self.toggleServiceButton.pack(side="right", fill="x")
@@ -356,6 +373,18 @@ class MainWindow:
             )
 
         self.update_network_history_names()
+        self.update_button_states()
+
+    def update_button_states(self, _event=None):
+        has_selection = self.networkList.focus() != ""
+        state = tk.NORMAL if has_selection else tk.DISABLED
+        for button in (
+            self.leaveButton,
+            self.toggleConnectionButton,
+            self.infoButton,
+            self.focusButton,
+        ):
+            button.configure(state=state)
 
     def update_network_history_names(self):
         networks = self.get_networks_info()
@@ -660,6 +689,82 @@ class MainWindow:
         else:
             return
         messagebox.showinfo(icon="info", message=leaveResult)
+        self.refresh_networks()
+
+    def focus_network(self):
+        try:
+            id_in_list = int(self.networkList.focus())
+        except TypeError:
+            messagebox.showinfo(
+                icon="info", title="Error", message="No network selected"
+            )
+            return
+
+        selected_network = self.get_networks_info()[id_in_list]
+        selected_interface = selected_network["portDeviceName"]
+        selected_name = selected_network["name"] or "Unknown Name"
+        selected_id = selected_network["id"]
+
+        networks_to_disconnect = []
+        for network in self.get_networks_info():
+            if network["id"] == selected_id:
+                continue
+            interface = network["portDeviceName"]
+            if self.get_interface_state(interface).lower() != "down":
+                name = network["name"] or "Unknown Name"
+                networks_to_disconnect.append((name, network["id"], interface))
+
+        selected_is_down = (
+            self.get_interface_state(selected_interface).lower() == "down"
+        )
+
+        if not networks_to_disconnect and not selected_is_down:
+            messagebox.showinfo(
+                icon="info",
+                title="Focus",
+                message=f'"{selected_name}" is already the only connected network.',
+            )
+            return
+
+        disconnect_lines = [
+            f'- "{name}" (ID: {network_id})'
+            for name, network_id, _interface in networks_to_disconnect
+        ]
+        message_parts = [
+            f'Focus on "{selected_name}" (ID: {selected_id})?',
+            "",
+            "The following networks will be disconnected:",
+            *disconnect_lines,
+        ]
+        if selected_is_down:
+            message_parts.extend(
+                ["", f'"{selected_name}" will be connected.']
+            )
+
+        answer = messagebox.askyesno(
+            title="Focus Network",
+            message="\n".join(message_parts),
+        )
+        if not answer:
+            return
+
+        batch_args = ["pkexec", HELPER_PATH, "ip-link-set-batch"]
+        for _name, _network_id, interface in networks_to_disconnect:
+            batch_args.extend([interface, "down"])
+        if selected_is_down:
+            batch_args.extend([selected_interface, "up"])
+
+        try:
+            check_output(batch_args, stderr=STDOUT)
+        except CalledProcessError as error:
+            details = error.output.decode(errors="replace").strip()
+            messagebox.showinfo(
+                title="Error",
+                message=f"Failed to focus network.\n\n{details}",
+                icon="error",
+            )
+            return
+
         self.refresh_networks()
 
     def get_status(self):

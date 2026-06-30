@@ -119,6 +119,26 @@ def main(argv: list[str]) -> int:
             ["ip", "link", "set", ifname, state], stderr=subprocess.STDOUT
         )
         return 0
+    if cmd == "ip-link-set-batch":
+        args = argv[2:]
+        if len(args) < 2 or len(args) % 2 != 0:
+            fail(
+                "Usage: zerotier-gui-helper ip-link-set-batch "
+                "<ifname> <state> [...]",
+                2,
+            )
+        for i in range(0, len(args), 2):
+            ifname = args[i]
+            state = args[i + 1].lower()
+            if state not in {"up", "down"}:
+                fail(f"State must be 'up' or 'down', got: {state!r}", 2)
+            validate_ifname(ifname)
+        for i in range(0, len(args), 2):
+            subprocess.check_output(
+                ["ip", "link", "set", args[i], args[i + 1].lower()],
+                stderr=subprocess.STDOUT,
+            )
+        return 0
     if cmd == "grant-acl":
         if len(argv) != 3:
             fail("Usage: zerotier-gui-helper grant-acl <username>", 2)
